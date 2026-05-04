@@ -112,7 +112,7 @@ const HALF = TILE/2;
 let score=0, lives=3, dotsEaten=0, level=1;
 let state='TITLE'; // TITLE PLAYING DEAD LEVELUP GAMEOVER
 let titleBlink=0, deadTimer=0, levelTimer=0;
-let powerTimer=0, ghostEatChain=0;
+let powerTimer=0, ghostEatChain=0, powerSession=0;
 let globalDot=0; // dot animation phase
 let pointBubbles=[];
 
@@ -137,6 +137,7 @@ function makeGhost(i){
     speed: 0.085,
     eaten: false,
     cellX: -1, cellY: -1,
+    immuneSession: -1,
   };
 }
 let ghosts = [0,1,2,3].map(makeGhost);
@@ -180,7 +181,7 @@ function eatCell(){
   const cx=Math.round(pac.x), cy=Math.round(pac.y);
   const c=maze[cy][cx];
   if(c===CELL_DOT){ maze[cy][cx]=CELL_EATEN; score+=10; dotsEaten++; playEat(); }
-  else if(c===CELL_POWER){ maze[cy][cx]=CELL_EATEN; score+=50; dotsEaten++; powerTimer=400; ghostEatChain=0; playPowerUp(); }
+  else if(c===CELL_POWER){ maze[cy][cx]=CELL_EATEN; score+=50; dotsEaten++; powerTimer=400; ghostEatChain=0; powerSession++; playPowerUp(); }
   if(dotsEaten>=totalDots){ state='LEVELUP'; levelTimer=120; }
 }
 
@@ -211,6 +212,8 @@ function updatePac(){
   eatCell();
 }
 
+function isFrightened(g){ return powerTimer>0 && g.immuneSession!==powerSession; }
+
 function updateGhosts(){
   const sp = level===1?1:1+level*0.05;
   ghosts.forEach((g,i)=>{
@@ -218,7 +221,7 @@ function updateGhosts(){
       // move towards home fast
       const tx=GHOST_HOME[0][0], ty=12;
       const dx=tx-g.x, dy=ty-g.y;
-      if(Math.abs(dx)+Math.abs(dy)<0.3){ g.eaten=false; g.mode='house'; g.houseTimer=60; }
+      if(Math.abs(dx)+Math.abs(dy)<0.3){ g.eaten=false; g.mode='house'; g.houseTimer=60; g.immuneSession=powerSession; }
       g.x+=Math.sign(dx)*0.18; g.y+=Math.sign(dy)*0.18;
       return;
     }
@@ -242,7 +245,7 @@ function updateGhosts(){
     }
 
     // chase / frightened
-    const frightened = powerTimer>0;
+    const frightened = isFrightened(g);
     const gsp = frightened ? g.speed*0.6*sp : g.speed*sp;
 
     // At a grid intersection — snap and choose new direction (only once per cell)
@@ -304,7 +307,7 @@ function updateGhosts(){
     if(g.eaten) return;
     const dist=Math.hypot(g.x-pac.x, g.y-pac.y);
     if(dist<0.75){
-      if(powerTimer>0){
+      if(isFrightened(g)){
         const pts=200*Math.pow(2,ghostEatChain);
         ghostEatChain++;
         g.eaten=true;
@@ -417,8 +420,8 @@ function drawPac(){
 function drawGhost(g){
   const px=g.x*CS+HALF, py=g.y*CS+HALF+TOP;
   const r=HALF-1;
-  const frightened=powerTimer>0;
-  const flashing=powerTimer>0&&powerTimer<100&&Math.floor(globalDot/10)%2===0;
+  const frightened=isFrightened(g);
+  const flashing=frightened&&powerTimer<100&&Math.floor(globalDot/10)%2===0;
 
   let bodyColor = frightened ? (flashing?'#ffffff':'#2121de') : g.color;
   let eyeColor  = frightened ? '#ffb852' : '#ffffff';
