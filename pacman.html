@@ -32,7 +32,14 @@ const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
 
 // ── MAZE ────────────────────────────────────────────────
-// 0=dot 1=wall 2=power 3=empty 4=ghost-house-door
+const CELL_DOT       = 0;
+const CELL_WALL      = 1;
+const CELL_POWER     = 2;
+const CELL_CAGE_WALL = 3;
+const CELL_DOOR          = 4;
+const CELL_EATEN         = 5;
+const CELL_CAGE_INTERIOR = 6;
+
 const RAW = [
  "1111111111111111111111111111",
  "1000000000000110000000000001",
@@ -44,13 +51,13 @@ const RAW = [
  "1011110110111111110110111101",
  "1000000110000110000110000001",
  "1111110111110110111110111111",
- "1111110111110110111110111111",
+ "1111110110000000000110111111",
+ "1111110110333443330110111111",
+ "1111110110366666630110111111",
+ "0000000000366666630000000000",
+ "1111110110366666630110111111",
  "1111110110333333330110111111",
- "1111110110344444430110111111",
- "0000000003444444430000000000",
- "1111110110344444430110111111",
- "1111110110333333330110111111",
- "1111110110111111110110111111",
+ "1111110110000000000110111111",
  "1111110110111111110110111111",
  "1000000000000110000000000001",
  "1011110111110110111110111101",
@@ -78,7 +85,7 @@ let maze = RAW.map(r => r.split('').map(Number));
 
 // Count total dots
 let totalDots = 0;
-maze.forEach(r => r.forEach(c => { if(c===0||c===2) totalDots++; }));
+maze.forEach(r => r.forEach(c => { if(c===CELL_DOT||c===CELL_POWER) totalDots++; }));
 
 // ── AUDIO ────────────────────────────────────────────────
 const AC = new (window.AudioContext||window.webkitAudioContext)();
@@ -119,7 +126,7 @@ const DIRS = [[1,0],[0,-1],[-1,0],[0,1],[0,0]];
 // Ghosts
 const GHOST_COLORS = ['#FF0000','#FFB8FF','#00FFFF','#FFB852'];
 const GHOST_NAMES  = ['BLINKY','PINKY','INKY','CLYDE'];
-const GHOST_HOME   = [[13,11],[13,13],[12,13],[14,13]];
+const GHOST_HOME   = [[13,10],[13,13],[12,13],[14,13]];
 
 function makeGhost(i){
   return {
@@ -148,7 +155,7 @@ function canMove(x,y,dx,dy){
   // wrap tunnel
   if(cx<0||cx>=COLS) return true;
   const c=maze[cy][cx];
-  return c!==1 && c!==4;
+  return c!==CELL_WALL && c!==CELL_CAGE_WALL && c!==CELL_DOOR && c!==CELL_CAGE_INTERIOR;
 }
 
 function canMoveGhost(x,y,dx,dy){
@@ -159,7 +166,7 @@ function canMoveGhost(x,y,dx,dy){
   if(cx<0) cx=COLS-1;
   if(cx>=COLS) cx=0;
   const c=maze[cy][cx];
-  return c!==1 && c!==4;
+  return c!==CELL_WALL && c!==CELL_CAGE_WALL && c!==CELL_DOOR && c!==CELL_CAGE_INTERIOR;
 }
 
 // ── UPDATE ───────────────────────────────────────────────
@@ -172,8 +179,8 @@ function resetPositions(){
 function eatCell(){
   const cx=Math.round(pac.x), cy=Math.round(pac.y);
   const c=maze[cy][cx];
-  if(c===0){ maze[cy][cx]=3; score+=10; dotsEaten++; playEat(); }
-  else if(c===2){ maze[cy][cx]=3; score+=50; dotsEaten++; powerTimer=400; ghostEatChain=0; playPowerUp(); }
+  if(c===CELL_DOT){ maze[cy][cx]=CELL_EATEN; score+=10; dotsEaten++; playEat(); }
+  else if(c===CELL_POWER){ maze[cy][cx]=CELL_EATEN; score+=50; dotsEaten++; powerTimer=400; ghostEatChain=0; playPowerUp(); }
   if(dotsEaten>=totalDots){ state='LEVELUP'; levelTimer=120; }
 }
 
@@ -225,8 +232,8 @@ function updateGhosts(){
     }
 
     if(g.mode==='exit'){
-      // move toward exit (13, 11)
-      const tx=13, ty=11;
+      // move toward exit (13, 10) — corridor above cage
+      const tx=13, ty=10;
       const dxe=tx-g.x, dye=ty-g.y;
       if(Math.abs(dxe)+Math.abs(dye)<0.3){ g.mode='chase'; g.dir=1; g.cellX=-1; g.cellY=-1; }
       g.x+=Math.sign(dxe)*g.speed*sp;
@@ -283,7 +290,7 @@ function updateGhosts(){
     const [gdx,gdy]=DIRS[g.dir];
     const ahead = { x: Math.round(g.x+gdx*0.6), y: Math.round(g.y+gdy*0.6) };
     let bx=ahead.x; if(bx<0)bx=COLS-1; if(bx>=COLS)bx=0;
-    const blocked = ahead.y>=0 && ahead.y<ROWS && maze[ahead.y][bx]===1;
+    const blocked = ahead.y>=0 && ahead.y<ROWS && maze[ahead.y][bx]===CELL_WALL;
 
     if(!blocked){
       g.x+=gdx*gsp; g.y+=gdy*gsp;
@@ -331,7 +338,7 @@ function restartGame(){
   score=0; lives=3; dotsEaten=0; level=1; powerTimer=0;
   maze=RAW.map(r=>r.split('').map(Number));
   totalDots=0;
-  maze.forEach(r=>r.forEach(c=>{if(c===0||c===2)totalDots++;}));
+  maze.forEach(r=>r.forEach(c=>{if(c===CELL_DOT||c===CELL_POWER)totalDots++;}));
   resetPositions();
   state='PLAYING';
 }
@@ -341,7 +348,7 @@ function drawMaze(){
   maze.forEach((row,ry)=>{
     row.forEach((cell,cx)=>{
       const px=cx*CS, py=ry*CS+TOP;
-      if(cell===1){
+      if(cell===CELL_WALL){
         ctx.fillStyle='#1a1aff';
         ctx.fillRect(px,py,CS,CS);
         // inner highlight
@@ -349,13 +356,13 @@ function drawMaze(){
         ctx.fillRect(px+1,py+1,CS-2,CS-2);
         ctx.fillStyle='#1a1aff';
         ctx.fillRect(px+2,py+2,CS-4,CS-4);
-      } else if(cell===0){
+      } else if(cell===CELL_DOT){
         // dot
         ctx.fillStyle='#ffb8ae';
         ctx.beginPath();
         ctx.arc(px+HALF,py+HALF,2,0,Math.PI*2);
         ctx.fill();
-      } else if(cell===2){
+      } else if(cell===CELL_POWER){
         // power pellet - blinking
         if(Math.floor(globalDot/15)%2===0){
           ctx.fillStyle='#ffb8ae';
@@ -366,6 +373,17 @@ function drawMaze(){
           ctx.fill();
           ctx.shadowBlur=0;
         }
+      } else if(cell===CELL_CAGE_WALL){
+        // ghost cage wall - white with 3-D bevel
+        ctx.fillStyle='#aaaaaa';
+        ctx.fillRect(px,py,CS,CS);
+        ctx.fillStyle='#ffffff';
+        ctx.fillRect(px+1,py+1,CS-2,CS-2);
+        ctx.fillStyle='#dddddd';
+        ctx.fillRect(px+2,py+2,CS-4,CS-4);
+      } else if(cell===CELL_DOOR){
+        ctx.fillStyle='#FF44FF';
+        ctx.fillRect(px, py+HALF-1, CS, 3);
       }
     });
   });
