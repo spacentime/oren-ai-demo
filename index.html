@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>ARCADE '84</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    background:#000;
+    min-height:100vh;
+    display:flex; flex-direction:column;
+    align-items:center; justify-content:center;
+    font-family:'Press Start 2P', monospace;
+    overflow:hidden;
+    user-select:none;
+  }
+
+  #arcade-title {
+    color:#FFE000;
+    font-size:28px;
+    text-shadow:0 0 20px #FFE000, 0 0 40px #FFE00066;
+    margin-bottom:8px;
+    letter-spacing:4px;
+  }
+  #arcade-sub {
+    color:#666;
+    font-size:8px;
+    margin-bottom:50px;
+    letter-spacing:6px;
+  }
+
+  #games {
+    display:flex;
+    gap:40px;
+  }
+
+  .game-card {
+    width:220px;
+    border:2px solid #333;
+    background:#050505;
+    padding:20px;
+    cursor:pointer;
+    transition:border-color 0.1s, box-shadow 0.1s;
+    position:relative;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    text-decoration:none;
+  }
+  .game-card:hover, .game-card.selected {
+    border-color:#FFE000;
+    box-shadow:0 0 20px #FFE00066, inset 0 0 20px #FFE00011;
+  }
+
+  .game-preview {
+    width:180px;
+    height:130px;
+    margin-bottom:16px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+  }
+
+  .game-preview canvas {
+    image-rendering:pixelated;
+  }
+
+  .game-title {
+    color:#fff;
+    font-size:11px;
+    margin-bottom:8px;
+    text-align:center;
+  }
+  .game-desc {
+    color:#555;
+    font-size:7px;
+    text-align:center;
+    line-height:1.8;
+  }
+
+  .play-btn {
+    margin-top:14px;
+    background:transparent;
+    border:2px solid #00ff41;
+    color:#00ff41;
+    font-family:'Press Start 2P', monospace;
+    font-size:8px;
+    padding:8px 16px;
+    cursor:pointer;
+    text-shadow:0 0 8px #00ff41;
+    box-shadow:0 0 8px #00ff4144;
+  }
+  .play-btn:hover {
+    background:#00ff4122;
+  }
+
+  /* Scanlines */
+  body::after {
+    content:'';
+    position:fixed; top:0; left:0; width:100%; height:100%;
+    background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,0.08) 2px,rgba(0,0,0,0.08) 4px);
+    pointer-events:none;
+    z-index:100;
+  }
+
+  #insert-coin {
+    margin-top:50px;
+    color:#FFE000;
+    font-size:10px;
+    text-shadow:0 0 10px #FFE000;
+  }
+
+  #stars { position:fixed; top:0; left:0; width:100%; height:100%; pointer-events:none; z-index:0; }
+  #content { position:relative; z-index:1; display:flex; flex-direction:column; align-items:center; }
+</style>
+</head>
+<body>
+<canvas id="stars"></canvas>
+<div id="content">
+  <div id="arcade-title">ARCADE '84</div>
+  <div id="arcade-sub">SELECT YOUR GAME</div>
+
+  <div id="games">
+    <a class="game-card" href="tennis.html">
+      <div class="game-preview">
+        <canvas id="tennis-preview" width="180" height="130"></canvas>
+      </div>
+      <div class="game-title">TENNIS PRO</div>
+      <div class="game-desc">CLASSIC PADDLE TENNIS<br>VS CPU OPPONENT<br>FIRST TO 7 WINS</div>
+      <button class="play-btn">► PLAY</button>
+    </a>
+
+    <a class="game-card" href="pacman.html">
+      <div class="game-preview">
+        <canvas id="pac-preview" width="180" height="130"></canvas>
+      </div>
+      <div class="game-title">PAC-MAN '80</div>
+      <div class="game-desc">EAT ALL THE DOTS<br>AVOID THE GHOSTS<br>COLLECT POWER UPS</div>
+      <button class="play-btn">► PLAY</button>
+    </a>
+  </div>
+
+  <div id="insert-coin" id="blink">⬤ INSERT COIN ⬤</div>
+</div>
+
+<script>
+// ── Stars background ────────────────────────────────────
+const sc = document.getElementById('stars');
+const sx = sc.getContext('2d');
+sc.width = window.innerWidth; sc.height = window.innerHeight;
+const stars = Array.from({length:120},()=>({
+  x:Math.random()*sc.width, y:Math.random()*sc.height,
+  r:Math.random()*1.5, s:Math.random()*0.5+0.2
+}));
+function drawStars(){
+  sx.clearRect(0,0,sc.width,sc.height);
+  stars.forEach(s=>{
+    s.y+=s.s; if(s.y>sc.height){s.y=0;s.x=Math.random()*sc.width;}
+    sx.fillStyle=`rgba(255,255,255,${0.3+Math.random()*0.3})`;
+    sx.beginPath(); sx.arc(s.x,s.y,s.r,0,Math.PI*2); sx.fill();
+  });
+  requestAnimationFrame(drawStars);
+}
+drawStars();
+
+// ── Insert coin blink ───────────────────────────────────
+let b=0;
+setInterval(()=>{
+  document.getElementById('insert-coin').style.opacity=Math.floor(b++/15)%2===0?'1':'0.2';
+},50);
+
+// ── Tennis preview animation ────────────────────────────
+const tc = document.getElementById('tennis-preview');
+const tx = tc.getContext('2d');
+const TW=tc.width, TH=tc.height;
+let tball={x:TW/2,y:TH/2,dx:2.5,dy:1.8};
+let tp1y=TH/2-20, tp2y=TH/2-20;
+function drawTennisPreview(){
+  tx.fillStyle='#000a00'; tx.fillRect(0,0,TW,TH);
+  // net
+  tx.setLineDash([4,4]); tx.strokeStyle='#003d0f'; tx.lineWidth=1;
+  tx.beginPath(); tx.moveTo(TW/2,0); tx.lineTo(TW/2,TH); tx.stroke();
+  tx.setLineDash([]);
+  // paddles
+  tx.fillStyle='#00ff41'; tx.fillRect(8,tp1y,6,40);
+  tx.fillStyle='#00ffff'; tx.fillRect(TW-14,tp2y,6,40);
+  // ball trail
+  tx.fillStyle='rgba(0,255,65,0.3)'; tx.fillRect(tball.x-8,tball.y-3,6,6);
+  tx.fillStyle='rgba(0,255,65,0.15)'; tx.fillRect(tball.x-16,tball.y-3,6,6);
+  // ball
+  tx.shadowColor='#00ff41'; tx.shadowBlur=8;
+  tx.fillStyle='#e0ffe0'; tx.fillRect(tball.x-4,tball.y-4,8,8);
+  tx.shadowBlur=0;
+  // move
+  tball.x+=tball.dx; tball.y+=tball.dy;
+  if(tball.y<4||tball.y>TH-4) tball.dy*=-1;
+  // paddle ai
+  tp1y+=(tball.y-20-tp1y)*0.08;
+  tp2y+=(tball.y-20-tp2y)*0.08;
+  tp1y=Math.max(0,Math.min(TH-40,tp1y));
+  tp2y=Math.max(0,Math.min(TH-40,tp2y));
+  if(tball.x<18&&tball.y>tp1y&&tball.y<tp1y+40){tball.dx=Math.abs(tball.dx);}
+  if(tball.x>TW-18&&tball.y>tp2y&&tball.y<tp2y+40){tball.dx=-Math.abs(tball.dx);}
+  if(tball.x<0){tball.x=0;tball.dx=Math.abs(tball.dx);}
+  if(tball.x>TW){tball.x=TW;tball.dx=-Math.abs(tball.dx);}
+  requestAnimationFrame(drawTennisPreview);
+}
+drawTennisPreview();
+
+// ── Pac-Man preview animation ───────────────────────────
+const pc = document.getElementById('pac-preview');
+const px2 = pc.getContext('2d');
+const PW=pc.width, PH=pc.height;
+let pm={x:20,y:PH/2,dir:1,mouth:0,mopen:true};
+let previewGhosts=[
+  {x:130,y:PH/2-30,c:'#FF0000',dy:0.8},
+  {x:150,y:PH/2+20,c:'#FFB8FF',dy:-0.6},
+];
+let pframe=0;
+function drawPacPreview(){
+  pframe++;
+  px2.fillStyle='#000'; px2.fillRect(0,0,PW,PH);
+  // dots
+  for(let i=0;i<8;i++){
+    const dx=20+i*20, dy=PH/2;
+    if(dx>pm.x+8){
+      px2.fillStyle='#ffb8ae';
+      px2.beginPath(); px2.arc(dx,dy,2,0,Math.PI*2); px2.fill();
+    }
+  }
+  // pac
+  pm.mouth+=pm.mopen?0.18:-0.18;
+  if(pm.mouth>0.35)pm.mopen=false;
+  if(pm.mouth<0.02)pm.mopen=true;
+  pm.x+=1.5; if(pm.x>PW+20)pm.x=-20;
+  px2.fillStyle='#FFE000'; px2.shadowColor='#FFE000'; px2.shadowBlur=10;
+  px2.beginPath();
+  px2.moveTo(pm.x,pm.y);
+  px2.arc(pm.x,pm.y,10,pm.mouth,Math.PI*2-pm.mouth);
+  px2.closePath(); px2.fill(); px2.shadowBlur=0;
+  // ghosts
+  previewGhosts.forEach(g=>{
+    g.y+=g.dy;
+    if(g.y<20||g.y>PH-20) g.dy*=-1;
+    px2.fillStyle=g.c; px2.shadowColor=g.c; px2.shadowBlur=8;
+    px2.beginPath();
+    px2.arc(g.x,g.y,10,Math.PI,0);
+    px2.lineTo(g.x+10,g.y+12);
+    [3,2,1].forEach((j,k)=>px2.lineTo(g.x+10-k*7,j%2===0?g.y+12:g.y+7));
+    px2.closePath(); px2.fill(); px2.shadowBlur=0;
+  });
+  requestAnimationFrame(drawPacPreview);
+}
+drawPacPreview();
+</script>
+</body>
+</html>

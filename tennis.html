@@ -1,0 +1,612 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TENNIS PRO '84</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: #000;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    font-family: 'Press Start 2P', monospace;
+    overflow: hidden;
+  }
+
+  #game-wrapper {
+    position: relative;
+    display: inline-block;
+  }
+
+  #gameCanvas {
+    display: block;
+    border: 3px solid #00ff41;
+    box-shadow: 0 0 30px #00ff41, 0 0 60px #00ff4155, inset 0 0 30px #00000088;
+    image-rendering: pixelated;
+  }
+
+  /* CRT overlay */
+  #crt-overlay {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    pointer-events: none;
+    z-index: 10;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0, 0, 0, 0.15) 2px,
+      rgba(0, 0, 0, 0.15) 4px
+    );
+  }
+
+  /* CRT vignette */
+  #vignette {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    pointer-events: none;
+    z-index: 11;
+    background: radial-gradient(ellipse at center,
+      transparent 60%,
+      rgba(0,0,0,0.7) 100%
+    );
+  }
+
+  #subtitle {
+    color: #00ff41;
+    font-size: 10px;
+    margin-top: 12px;
+    text-shadow: 0 0 8px #00ff41;
+    letter-spacing: 3px;
+    opacity: 0.7;
+  }
+
+  @keyframes flicker {
+    0%, 100% { opacity: 1; }
+    92% { opacity: 1; }
+    93% { opacity: 0.8; }
+    94% { opacity: 1; }
+    96% { opacity: 0.9; }
+    97% { opacity: 1; }
+  }
+
+  #game-wrapper { animation: flicker 8s infinite; }
+</style>
+</head>
+<body>
+<div id="game-wrapper">
+  <canvas id="gameCanvas" width="800" height="500"></canvas>
+  <div id="crt-overlay"></div>
+  <div id="vignette"></div>
+</div>
+<div id="subtitle">INSERT COIN &nbsp;|&nbsp; W/S = PLAYER &nbsp;|&nbsp; PRESS SPACE</div>
+
+<script>
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+
+const W = canvas.width;
+const H = canvas.height;
+
+// Audio context for retro beeps
+const AudioCtx = window.AudioContext || window.webkitAudioContext;
+const audio = new AudioCtx();
+
+function beep(freq, duration, type = 'square', vol = 0.3) {
+  const osc = audio.createOscillator();
+  const gain = audio.createGain();
+  osc.connect(gain);
+  gain.connect(audio.destination);
+  osc.type = type;
+  osc.frequency.value = freq;
+  gain.gain.setValueAtTime(vol, audio.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.001, audio.currentTime + duration);
+  osc.start(audio.currentTime);
+  osc.stop(audio.currentTime + duration);
+}
+
+// Colors
+const C = {
+  bg: '#000a00',
+  green: '#00ff41',
+  dimGreen: '#003d0f',
+  yellow: '#ffff00',
+  white: '#e0ffe0',
+  red: '#ff4444',
+  cyan: '#00ffff',
+};
+
+// Game state
+const State = { TITLE: 0, PLAYING: 1, PAUSED: 2, POINT: 3, GAMEOVER: 4 };
+let state = State.TITLE;
+
+const PADDLE_W = 12;
+const PADDLE_H = 80;
+const BALL_SIZE = 10;
+const WINNING_SCORE = 7;
+
+let player = {
+  x: 30, y: H/2 - PADDLE_H/2,
+  w: PADDLE_W, h: PADDLE_H,
+  score: 0, dy: 0, speed: 6
+};
+
+let cpu = {
+  x: W - 30 - PADDLE_W, y: H/2 - PADDLE_H/2,
+  w: PADDLE_W, h: PADDLE_H,
+  score: 0, speed: 4.5
+};
+
+let ball = {
+  x: W/2, y: H/2,
+  dx: 5, dy: 3,
+  speed: 5, size: BALL_SIZE
+};
+
+let particles = [];
+let flashTimer = 0;
+let pointMsg = '';
+let pointTimer = 0;
+let titleBlink = 0;
+let cpuDifficulty = 1;
+let rallyCount = 0;
+
+// Trail for ball
+let trail = [];
+
+const keys = {};
+document.addEventListener('keydown', e => {
+  keys[e.code] = true;
+  if (e.code === 'Space') {
+    if (state === State.TITLE) startGame();
+    else if (state === State.PAUSED) state = State.PLAYING;
+    else if (state === State.PLAYING) state = State.PAUSED;
+    else if (state === State.GAMEOVER) { resetGame(); state = State.TITLE; }
+  }
+  if (e.code === 'KeyR' && state === State.GAMEOVER) {
+    resetGame(); state = State.TITLE;
+  }
+  e.preventDefault();
+});
+document.addEventListener('keyup', e => { keys[e.code] = false; });
+
+function startGame() {
+  resetBall(1);
+  player.score = 0;
+  cpu.score = 0;
+  rallyCount = 0;
+  state = State.PLAYING;
+  beep(440, 0.1);
+  beep(660, 0.15);
+}
+
+function resetGame() {
+  player.y = H/2 - PADDLE_H/2;
+  cpu.y = H/2 - PADDLE_H/2;
+  particles = [];
+  trail = [];
+}
+
+function resetBall(dir = 1) {
+  ball.x = W/2;
+  ball.y = H/2 + (Math.random()-0.5)*100;
+  ball.speed = 5;
+  const angle = (Math.random() * 0.6 - 0.3);
+  ball.dx = dir * ball.speed * Math.cos(angle);
+  ball.dy = ball.speed * Math.sin(angle);
+  trail = [];
+  rallyCount = 0;
+}
+
+function spawnParticles(x, y, color, count = 12) {
+  for (let i = 0; i < count; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const spd = Math.random() * 4 + 1;
+    particles.push({
+      x, y,
+      dx: Math.cos(angle) * spd,
+      dy: Math.sin(angle) * spd,
+      life: 1, decay: Math.random() * 0.04 + 0.02,
+      size: Math.random() * 4 + 1,
+      color
+    });
+  }
+}
+
+function updateParticles() {
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.x += p.dx; p.y += p.dy;
+    p.dy += 0.1;
+    p.life -= p.decay;
+    if (p.life <= 0) particles.splice(i, 1);
+  }
+}
+
+function updatePlayer() {
+  if (keys['KeyW'] || keys['ArrowUp']) player.dy = -player.speed;
+  else if (keys['KeyS'] || keys['ArrowDown']) player.dy = player.speed;
+  else player.dy *= 0.8;
+
+  player.y += player.dy;
+  player.y = Math.max(0, Math.min(H - PADDLE_H, player.y));
+}
+
+function updateCPU() {
+  const targetY = ball.y - cpu.h/2;
+  const diff = targetY - cpu.y;
+  // Add slight imperfection
+  const err = (Math.random() - 0.5) * (30 - rallyCount);
+  const move = Math.sign(diff) * Math.min(Math.abs(diff), cpu.speed + rallyCount * 0.05);
+  cpu.y += move + err * 0.05;
+  cpu.y = Math.max(0, Math.min(H - PADDLE_H, cpu.y));
+}
+
+function updateBall() {
+  // Trail
+  trail.push({ x: ball.x, y: ball.y });
+  if (trail.length > 10) trail.shift();
+
+  ball.x += ball.dx;
+  ball.y += ball.dy;
+
+  // Top/bottom bounce
+  if (ball.y - ball.size/2 <= 0) {
+    ball.y = ball.size/2;
+    ball.dy = Math.abs(ball.dy);
+    beep(220, 0.05, 'square', 0.2);
+    spawnParticles(ball.x, ball.y, C.dimGreen, 5);
+  }
+  if (ball.y + ball.size/2 >= H) {
+    ball.y = H - ball.size/2;
+    ball.dy = -Math.abs(ball.dy);
+    beep(220, 0.05, 'square', 0.2);
+    spawnParticles(ball.x, ball.y, C.dimGreen, 5);
+  }
+
+  // Player paddle collision
+  if (
+    ball.x - ball.size/2 <= player.x + player.w &&
+    ball.x - ball.size/2 >= player.x &&
+    ball.y >= player.y &&
+    ball.y <= player.y + player.h
+  ) {
+    ball.dx = Math.abs(ball.dx);
+    const hitPos = (ball.y - player.y) / player.h - 0.5;
+    ball.dy = hitPos * 8;
+    ball.speed = Math.min(ball.speed + 0.3, 14);
+    ball.dx = ball.speed * 0.85;
+    ball.dy *= (ball.speed / 5);
+    rallyCount++;
+    beep(330, 0.08, 'square');
+    spawnParticles(ball.x, ball.y, C.green, 8);
+    flashTimer = 3;
+  }
+
+  // CPU paddle collision
+  if (
+    ball.x + ball.size/2 >= cpu.x &&
+    ball.x + ball.size/2 <= cpu.x + cpu.w &&
+    ball.y >= cpu.y &&
+    ball.y <= cpu.y + cpu.h
+  ) {
+    ball.dx = -Math.abs(ball.dx);
+    const hitPos = (ball.y - cpu.y) / cpu.h - 0.5;
+    ball.dy = hitPos * 8;
+    ball.speed = Math.min(ball.speed + 0.3, 14);
+    ball.dx = -ball.speed * 0.85;
+    ball.dy *= (ball.speed / 5);
+    rallyCount++;
+    beep(220, 0.08, 'square');
+    spawnParticles(ball.x, ball.y, C.cyan, 8);
+    flashTimer = 3;
+  }
+
+  // Scoring
+  if (ball.x < 0) {
+    cpu.score++;
+    beep(150, 0.3, 'sawtooth');
+    spawnParticles(W*0.1, ball.y, C.red, 20);
+    checkGameOver('CPU WINS POINT!');
+  }
+  if (ball.x > W) {
+    player.score++;
+    beep(440, 0.1); beep(660, 0.15);
+    spawnParticles(W*0.9, ball.y, C.yellow, 20);
+    checkGameOver('PLAYER WINS POINT!');
+  }
+}
+
+function checkGameOver(msg) {
+  if (player.score >= WINNING_SCORE || cpu.score >= WINNING_SCORE) {
+    state = State.GAMEOVER;
+    beep(player.score >= WINNING_SCORE ? 523 : 147, 0.5);
+  } else {
+    pointMsg = msg;
+    pointTimer = 90;
+    state = State.POINT;
+    setTimeout(() => {
+      resetBall(player.score < cpu.score ? 1 : -1);
+      state = State.PLAYING;
+    }, 1500);
+  }
+}
+
+// Drawing functions
+function drawNet() {
+  ctx.setLineDash([10, 8]);
+  ctx.strokeStyle = C.dimGreen;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(W/2, 0);
+  ctx.lineTo(W/2, H);
+  ctx.stroke();
+  ctx.setLineDash([]);
+}
+
+function drawCourt() {
+  // Background
+  ctx.fillStyle = C.bg;
+  ctx.fillRect(0, 0, W, H);
+
+  // Court lines
+  ctx.strokeStyle = '#002200';
+  ctx.lineWidth = 1;
+  // Service boxes
+  ctx.strokeRect(50, H*0.1, W/2-50, H*0.8);
+  ctx.strokeRect(W/2, H*0.1, W/2-50, H*0.8);
+
+  // Center service line horizontal
+  ctx.beginPath();
+  ctx.moveTo(50, H/2); ctx.lineTo(W-50, H/2);
+  ctx.stroke();
+}
+
+function drawPaddle(p, color, glowColor) {
+  // Glow
+  ctx.shadowColor = glowColor;
+  ctx.shadowBlur = 15;
+  ctx.fillStyle = color;
+  // Pixel-style paddle with segments
+  const segs = 5;
+  const segH = p.h / segs;
+  for (let i = 0; i < segs; i++) {
+    const alpha = i === 0 || i === segs-1 ? 0.6 : 1;
+    ctx.globalAlpha = alpha;
+    ctx.fillRect(p.x, p.y + i * segH, p.w, segH - 1);
+  }
+  ctx.globalAlpha = 1;
+  ctx.shadowBlur = 0;
+}
+
+function drawBall() {
+  // Trail
+  for (let i = 0; i < trail.length; i++) {
+    const t = trail[i];
+    const alpha = (i / trail.length) * 0.4;
+    const size = ball.size * (i / trail.length) * 0.8;
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = C.green;
+    ctx.fillRect(t.x - size/2, t.y - size/2, size, size);
+  }
+  ctx.globalAlpha = 1;
+
+  // Ball glow
+  ctx.shadowColor = C.green;
+  ctx.shadowBlur = 20;
+  ctx.fillStyle = C.white;
+  ctx.fillRect(ball.x - ball.size/2, ball.y - ball.size/2, ball.size, ball.size);
+
+  // Inner pixel
+  ctx.fillStyle = C.green;
+  const s = ball.size * 0.5;
+  ctx.fillRect(ball.x - s/2, ball.y - s/2, s, s);
+  ctx.shadowBlur = 0;
+}
+
+function drawParticles() {
+  for (const p of particles) {
+    ctx.globalAlpha = p.life;
+    ctx.fillStyle = p.color;
+    ctx.fillRect(p.x - p.size/2, p.y - p.size/2, p.size, p.size);
+  }
+  ctx.globalAlpha = 1;
+}
+
+function drawScore() {
+  ctx.font = '32px "Press Start 2P"';
+  ctx.textAlign = 'center';
+
+  // Player score
+  ctx.fillStyle = C.green;
+  ctx.shadowColor = C.green;
+  ctx.shadowBlur = 10;
+  ctx.fillText(player.score, W/2 - 80, 50);
+
+  // CPU score
+  ctx.fillStyle = C.cyan;
+  ctx.shadowColor = C.cyan;
+  ctx.fillText(cpu.score, W/2 + 80, 50);
+
+  ctx.shadowBlur = 0;
+
+  // Rally counter
+  if (rallyCount > 3) {
+    ctx.font = '8px "Press Start 2P"';
+    ctx.fillStyle = rallyCount > 8 ? C.yellow : C.dimGreen;
+    ctx.fillText(`RALLY x${rallyCount}`, W/2, H - 10);
+  }
+
+  // Name labels
+  ctx.font = '8px "Press Start 2P"';
+  ctx.fillStyle = C.green;
+  ctx.fillText('PLAYER', W/2 - 80, 65);
+  ctx.fillStyle = C.cyan;
+  ctx.fillText('CPU', W/2 + 80, 65);
+}
+
+function drawTitleScreen() {
+  ctx.fillStyle = C.bg;
+  ctx.fillRect(0, 0, W, H);
+
+  // Scanline effect on title
+  for (let y = 0; y < H; y += 4) {
+    ctx.fillStyle = 'rgba(0,255,65,0.03)';
+    ctx.fillRect(0, y, W, 2);
+  }
+
+  // Title
+  ctx.textAlign = 'center';
+  ctx.shadowColor = C.green;
+  ctx.shadowBlur = 30;
+  ctx.fillStyle = C.green;
+  ctx.font = '48px "Press Start 2P"';
+  ctx.fillText('TENNIS', W/2, 160);
+  ctx.font = '28px "Press Start 2P"';
+  ctx.fillStyle = C.yellow;
+  ctx.shadowColor = C.yellow;
+  ctx.fillText("PRO '84", W/2, 210);
+
+  ctx.shadowBlur = 0;
+  ctx.font = '10px "Press Start 2P"';
+  ctx.fillStyle = '#004400';
+  ctx.fillText('─────────────────────────────────', W/2, 240);
+
+  // Controls
+  ctx.fillStyle = C.white;
+  ctx.font = '9px "Press Start 2P"';
+  ctx.fillText('W / S  OR  ↑ / ↓   MOVE PADDLE', W/2, 280);
+  ctx.fillText('SPACE  =  PAUSE', W/2, 305);
+  ctx.fillText('FIRST TO 7 WINS!', W/2, 330);
+
+  // Blink insert coin
+  titleBlink++;
+  if (Math.floor(titleBlink / 25) % 2 === 0) {
+    ctx.fillStyle = C.yellow;
+    ctx.shadowColor = C.yellow;
+    ctx.shadowBlur = 8;
+    ctx.font = '12px "Press Start 2P"';
+    ctx.fillText('>> PRESS SPACE TO START <<', W/2, 410);
+    ctx.shadowBlur = 0;
+  }
+
+  // Version
+  ctx.fillStyle = '#003300';
+  ctx.font = '7px "Press Start 2P"';
+  ctx.fillText('© 1984 RETRO STUDIOS  VER 1.0', W/2, H - 15);
+}
+
+function drawPaused() {
+  ctx.fillStyle = 'rgba(0,0,0,0.6)';
+  ctx.fillRect(0, 0, W, H);
+  ctx.textAlign = 'center';
+  ctx.fillStyle = C.yellow;
+  ctx.shadowColor = C.yellow;
+  ctx.shadowBlur = 15;
+  ctx.font = '24px "Press Start 2P"';
+  ctx.fillText('PAUSED', W/2, H/2 - 20);
+  ctx.font = '10px "Press Start 2P"';
+  ctx.fillText('PRESS SPACE TO CONTINUE', W/2, H/2 + 20);
+  ctx.shadowBlur = 0;
+}
+
+function drawPointMsg() {
+  ctx.fillStyle = 'rgba(0,0,0,0.5)';
+  ctx.fillRect(0, 0, W, H);
+  ctx.textAlign = 'center';
+  ctx.fillStyle = pointMsg.includes('PLAYER') ? C.yellow : C.red;
+  ctx.shadowColor = pointMsg.includes('PLAYER') ? C.yellow : C.red;
+  ctx.shadowBlur = 20;
+  ctx.font = '16px "Press Start 2P"';
+  ctx.fillText(pointMsg, W/2, H/2);
+  ctx.shadowBlur = 0;
+}
+
+function drawGameOver() {
+  ctx.fillStyle = 'rgba(0,0,0,0.8)';
+  ctx.fillRect(0, 0, W, H);
+  ctx.textAlign = 'center';
+
+  const playerWon = player.score >= WINNING_SCORE;
+  ctx.fillStyle = playerWon ? C.yellow : C.red;
+  ctx.shadowColor = playerWon ? C.yellow : C.red;
+  ctx.shadowBlur = 25;
+  ctx.font = '28px "Press Start 2P"';
+  ctx.fillText(playerWon ? 'YOU WIN!' : 'GAME OVER', W/2, H/2 - 50);
+
+  ctx.font = '14px "Press Start 2P"';
+  ctx.fillStyle = C.white;
+  ctx.shadowColor = C.white;
+  ctx.fillText(`${player.score}  -  ${cpu.score}`, W/2, H/2);
+
+  ctx.font = '10px "Press Start 2P"';
+  ctx.fillStyle = C.green;
+  ctx.shadowColor = C.green;
+  titleBlink++;
+  if (Math.floor(titleBlink / 25) % 2 === 0) {
+    ctx.fillText('PRESS SPACE TO PLAY AGAIN', W/2, H/2 + 60);
+  }
+  ctx.shadowBlur = 0;
+}
+
+// Flash effect on hit
+function drawFlash() {
+  if (flashTimer > 0) {
+    ctx.fillStyle = `rgba(0,255,65,${flashTimer * 0.02})`;
+    ctx.fillRect(0, 0, W, H);
+    flashTimer--;
+  }
+}
+
+// Main game loop
+function update() {
+  if (state === State.PLAYING) {
+    updatePlayer();
+    updateCPU();
+    updateBall();
+    updateParticles();
+  } else if (state === State.POINT) {
+    updateParticles();
+  }
+}
+
+function draw() {
+  if (state === State.TITLE) {
+    drawTitleScreen();
+    return;
+  }
+
+  drawCourt();
+  drawNet();
+  drawParticles();
+  drawPaddle(player, C.green, C.green);
+  drawPaddle(cpu, C.cyan, C.cyan);
+  drawBall();
+  drawFlash();
+  drawScore();
+
+  if (state === State.PAUSED) drawPaused();
+  if (state === State.POINT) drawPointMsg();
+  if (state === State.GAMEOVER) drawGameOver();
+}
+
+function loop() {
+  update();
+  draw();
+  requestAnimationFrame(loop);
+}
+
+// Start
+loop();
+</script>
+</body>
+</html>
