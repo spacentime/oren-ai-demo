@@ -128,6 +128,7 @@ function makeGhost(i){
     houseTimer: i*120,
     speed: 0.085,
     eaten: false,
+    cellX: -1, cellY: -1,
   };
 }
 let ghosts = [0,1,2,3].map(makeGhost);
@@ -157,7 +158,7 @@ function canMoveGhost(x,y,dx,dy){
   if(cx<0) cx=COLS-1;
   if(cx>=COLS) cx=0;
   const c=maze[cy][cx];
-  return c!==1;
+  return c!==1 && c!==4;
 }
 
 // ── UPDATE ───────────────────────────────────────────────
@@ -226,7 +227,7 @@ function updateGhosts(){
       // move toward exit (13, 11)
       const tx=13, ty=11;
       const dxe=tx-g.x, dye=ty-g.y;
-      if(Math.abs(dxe)+Math.abs(dye)<0.3){ g.mode='chase'; g.dir=1; }
+      if(Math.abs(dxe)+Math.abs(dye)<0.3){ g.mode='chase'; g.dir=1; g.cellX=-1; g.cellY=-1; }
       g.x+=Math.sign(dxe)*g.speed*sp;
       g.y+=Math.sign(dye)*g.speed*sp;
       return;
@@ -236,13 +237,16 @@ function updateGhosts(){
     const frightened = powerTimer>0;
     const gsp = frightened ? g.speed*0.6*sp : g.speed*sp;
 
-    // At a grid intersection — snap and choose new direction
-    const atCenter = Math.abs(g.x-Math.round(g.x)) < gsp+0.06 &&
-                     Math.abs(g.y-Math.round(g.y)) < gsp+0.06;
+    // At a grid intersection — snap and choose new direction (only once per cell)
+    const snapX = Math.round(g.x), snapY = Math.round(g.y);
+    const atCenter = Math.abs(g.x - snapX) < gsp+0.06 &&
+                     Math.abs(g.y - snapY) < gsp+0.06 &&
+                     (snapX !== g.cellX || snapY !== g.cellY);
 
     if(atCenter){
-      g.x = Math.round(g.x);
-      g.y = Math.round(g.y);
+      g.cellX = snapX; g.cellY = snapY;
+      g.x = snapX;
+      g.y = snapY;
 
       let tx=pac.x, ty=pac.y;
       if(frightened){
