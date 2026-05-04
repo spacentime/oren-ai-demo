@@ -105,8 +105,9 @@ const HALF = TILE/2;
 let score=0, lives=3, dotsEaten=0, level=1;
 let state='TITLE'; // TITLE PLAYING DEAD LEVELUP GAMEOVER
 let titleBlink=0, deadTimer=0, levelTimer=0;
-let powerTimer=0;
+let powerTimer=0, ghostEatChain=0;
 let globalDot=0; // dot animation phase
+let pointBubbles=[];
 
 // Pac-Man
 let pac = { x:13.5, y:21, dir:0, nextDir:0, mouthAngle:0, mouthOpen:true, speed:0.1, alive:true };
@@ -165,14 +166,14 @@ function canMoveGhost(x,y,dx,dy){
 function resetPositions(){
   pac.x=13.5; pac.y=21; pac.dir=4; pac.nextDir=4; pac.alive=true;
   ghosts=[0,1,2,3].map(makeGhost);
-  powerTimer=0;
+  powerTimer=0; ghostEatChain=0; pointBubbles=[];
 }
 
 function eatCell(){
   const cx=Math.round(pac.x), cy=Math.round(pac.y);
   const c=maze[cy][cx];
   if(c===0){ maze[cy][cx]=3; score+=10; dotsEaten++; playEat(); }
-  else if(c===2){ maze[cy][cx]=3; score+=50; dotsEaten++; powerTimer=400; playPowerUp(); }
+  else if(c===2){ maze[cy][cx]=3; score+=50; dotsEaten++; powerTimer=400; ghostEatChain=0; playPowerUp(); }
   if(dotsEaten>=totalDots){ state='LEVELUP'; levelTimer=120; }
 }
 
@@ -297,8 +298,11 @@ function updateGhosts(){
     const dist=Math.hypot(g.x-pac.x, g.y-pac.y);
     if(dist<0.75){
       if(powerTimer>0){
+        const pts=200*Math.pow(2,ghostEatChain);
+        ghostEatChain++;
         g.eaten=true;
-        score+=200;
+        score+=pts;
+        pointBubbles.push({x:g.x*CS+HALF, y:g.y*CS+HALF+TOP, pts, life:1, dy:-0.4});
         beep(880,0.05); beep(1100,0.08);
       } else {
         pac.alive=false;
@@ -559,12 +563,13 @@ function loop(){
   else {
     drawMaze();
     drawParticles();
+    drawPointBubbles();
     ghosts.forEach(drawGhost);
     if(pac.alive) drawPac();
     drawHUD();
 
     if(state==='PLAYING'){
-      if(powerTimer>0) powerTimer--;
+      if(powerTimer>0){ powerTimer--; if(powerTimer===0) ghostEatChain=0; }
       updatePac();
       updateGhosts();
     }
@@ -597,6 +602,23 @@ function loop(){
     }
   }
   requestAnimationFrame(loop);
+}
+
+function drawPointBubbles(){
+  ctx.font='9px "Press Start 2P"';
+  ctx.textAlign='center';
+  for(let i=pointBubbles.length-1;i>=0;i--){
+    const b=pointBubbles[i];
+    b.y+=b.dy;
+    b.life-=0.018;
+    if(b.life<=0){ pointBubbles.splice(i,1); continue; }
+    ctx.globalAlpha=Math.min(1,b.life);
+    ctx.fillStyle='#FFE000';
+    ctx.shadowColor='#FF8800'; ctx.shadowBlur=6;
+    ctx.fillText(b.pts,b.x,b.y);
+    ctx.shadowBlur=0;
+  }
+  ctx.globalAlpha=1;
 }
 
 // simple particles for power-eat effect
