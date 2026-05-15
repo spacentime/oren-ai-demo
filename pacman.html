@@ -137,6 +137,7 @@ function makeGhost(i){
     houseTimer: i*120,
     speed: 0.085,
     eaten: false,
+    path: [], pathIdx: 0,
     cellX: -1, cellY: -1,
     immuneSession: -1,
   };
@@ -150,14 +151,24 @@ function cellAt(x,y){
   return maze[cy][cx];
 }
 
-function canMove(x,y,dx,dy){
-  const nx=x+dx*0.5, ny=y+dy*0.5;
-  const cx=Math.round(nx), cy=Math.round(ny);
+function cellOpen(cx,cy){
   if(cy<0||cy>=ROWS) return false;
-  // wrap tunnel
   if(cx<0||cx>=COLS) return true;
   const c=maze[cy][cx];
   return c!==CELL_WALL && c!==CELL_CAGE_WALL && c!==CELL_DOOR && c!==CELL_CAGE_INTERIOR;
+}
+
+// Used for movement: Math.round gives symmetric stopping distance in all directions.
+function canMove(x,y,dx,dy){
+  return cellOpen(Math.round(x+dx*0.5), Math.round(y+dy*0.5));
+}
+
+// Used for direction switching: Math.floor on negative axes prevents prematurely switching
+// direction when pressing into a wall, so Pacman keeps going in its current direction.
+function canTurn(x,y,dx,dy){
+  const cx=dx<0 ? Math.floor(x+dx*0.5) : Math.round(x+dx*0.5);
+  const cy=dy<0 ? Math.floor(y+dy*0.5) : Math.round(y+dy*0.5);
+  return cellOpen(cx,cy);
 }
 
 function canMoveGhost(x,y,dx,dy){
@@ -191,7 +202,7 @@ function updatePac(){
 
   // try next direction
   const [ndx,ndy]=DIRS[pac.nextDir];
-  if(pac.nextDir!==4 && canMove(pac.x,pac.y,ndx,ndy)) pac.dir=pac.nextDir;
+  if(pac.nextDir!==4 && canTurn(pac.x,pac.y,ndx,ndy)) pac.dir=pac.nextDir;
 
   const [dx,dy]=DIRS[pac.dir];
   if(pac.dir!==4 && canMove(pac.x,pac.y,dx,dy)){
@@ -199,7 +210,7 @@ function updatePac(){
     pac.y+=dy*pac.speed;
     // tunnel wrap
     if(pac.x<0) pac.x=COLS-0.5;
-    if(pac.x>=COLS) pac.x=0.5;
+    if(pac.x>=COLS) pac.x=0;
     // snap to grid
     if(dx!==0) pac.y=Math.round(pac.y);
     if(dy!==0) pac.x=Math.round(pac.x);
@@ -215,15 +226,55 @@ function updatePac(){
 
 function isFrightened(g){ return powerTimer>0 && g.immuneSession!==powerSession; }
 
+function bfsPath(sx, sy, tx, ty){
+  const q = [[Math.round(sx), Math.round(sy)]];
+  const visited = {};
+  const prev = {};
+  const key = (x,y) => x+','+y;
+  visited[key(q[0][0], q[0][1])] = true;
+  while(q.length){
+    const [cx,cy] = q.shift();
+    if(cx===tx && cy===ty){
+      const path=[];
+      let cur=key(tx,ty);
+      while(prev[cur]){ path.unshift(prev[cur]); cur=key(...prev[cur]); }
+      path.push([tx,ty]);
+      return path;
+    }
+    for(const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1]]){
+      let nx=cx+dx, ny=cy+dy;
+      if(nx<0) nx=COLS-1; if(nx>=COLS) nx=0;
+      if(ny<0||ny>=ROWS) continue;
+      const c=maze[ny][nx];
+      if(c===CELL_WALL || c===CELL_CAGE_WALL) continue;
+      const k=key(nx,ny);
+      if(!visited[k]){ visited[k]=true; prev[k]=[cx,cy]; q.push([nx,ny]); }
+    }
+  }
+  return [[tx,ty]];
+}
+
 function updateGhosts(){
   const sp = level===1?1:1+level*0.05;
   ghosts.forEach((g,i)=>{
     if(g.eaten){
-      // move towards home fast
-      const tx=GHOST_HOME[0][0], ty=12;
-      const dx=tx-g.x, dy=ty-g.y;
-      if(Math.abs(dx)+Math.abs(dy)<0.3){ g.eaten=false; g.mode='house'; g.houseTimer=60; g.immuneSession=powerSession; }
-      g.x+=Math.sign(dx)*0.18; g.y+=Math.sign(dy)*0.18;
+      if(!g.path.length){
+        g.path = bfsPath(g.x, g.y, GHOST_HOME[0][0], 12);
+        g.pathIdx = 0;
+      }
+      if(g.pathIdx >= g.path.length){
+        g.eaten=false; g.mode='house'; g.houseTimer=60;
+        g.immuneSession=powerSession; g.path=[]; return;
+      }
+      const [wx,wy] = g.path[g.pathIdx];
+      const dx=wx-g.x, dy=wy-g.y;
+      if(Math.abs(dx)+Math.abs(dy)<0.12){
+        g.x=wx; g.y=wy; g.pathIdx++;
+      } else {
+        const spd=0.18;
+        g.x+=Math.sign(dx)*Math.min(Math.abs(dx),spd);
+        g.y+=Math.sign(dy)*Math.min(Math.abs(dy),spd);
+      }
       return;
     }
 
@@ -311,7 +362,7 @@ function updateGhosts(){
       if(isFrightened(g)){
         const pts=200*Math.pow(2,ghostEatChain);
         ghostEatChain++;
-        g.eaten=true;
+        g.eaten=true; g.path=[]; g.pathIdx=0;
         score+=pts;
         pointBubbles.push({x:g.x*CS+HALF, y:g.y*CS+HALF+TOP, pts, life:1, dy:-0.4});
         beep(880,0.05); beep(1100,0.08);
@@ -466,6 +517,29 @@ function drawPac(){
 function drawGhost(g){
   const px=g.x*CS+HALF, py=g.y*CS+HALF+TOP;
   const r=HALF-1;
+
+  if(g.eaten){
+    // derive travel direction from the active path waypoint
+    let edx=0, edy=0;
+    if(g.path.length && g.pathIdx < g.path.length){
+      const [wx,wy]=g.path[g.pathIdx];
+      const ddx=wx-g.x, ddy=wy-g.y;
+      const len=Math.hypot(ddx,ddy)||1;
+      edx=ddx/len; edy=ddy/len;
+    }
+    [-4,4].forEach(ox=>{
+      ctx.fillStyle='#ffffff';
+      ctx.beginPath();
+      ctx.ellipse(px+ox, py-3, 3, 4, 0, 0, Math.PI*2);
+      ctx.fill();
+      ctx.fillStyle='#000099';
+      ctx.beginPath();
+      ctx.arc(px+ox+edx*2, py-3+edy*2, 2, 0, Math.PI*2);
+      ctx.fill();
+    });
+    return;
+  }
+
   const frightened=isFrightened(g);
   const flashing=frightened&&powerTimer<100&&Math.floor(globalDot/10)%2===0;
 
@@ -507,11 +581,28 @@ function drawGhost(g){
       ctx.fill();
     });
   } else {
-    // scared face
-    ctx.fillStyle='#ffb852';
-    ctx.font='8px sans-serif';
-    ctx.textAlign='center';
-    ctx.fillText(flashing?'!':'',px,py+2);
+    // frightened face — colour inverts so it stays visible on the flashing white body
+    const fc = flashing ? '#2121de' : '#ffffff';
+
+    // eyes: two small dots
+    ctx.fillStyle = fc;
+    [-4,4].forEach(ox=>{
+      ctx.beginPath();
+      ctx.arc(px+ox, py-4, 2, 0, Math.PI*2);
+      ctx.fill();
+    });
+
+    // mouth: zigzag worried line
+    ctx.strokeStyle = fc;
+    ctx.lineWidth = 1.5;
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    ctx.moveTo(px-5, py+3);
+    ctx.lineTo(px-2.5, py);
+    ctx.lineTo(px,    py+3);
+    ctx.lineTo(px+2.5,py);
+    ctx.lineTo(px+5,  py+3);
+    ctx.stroke();
   }
 }
 
@@ -674,6 +765,7 @@ function loop(){
       drawLevelUp();
       if(levelTimer<=0){
         level++;
+        lives++;  // Gain a life every level up!
         dotsEaten=0; cherriesLeft=3;
         maze=RAW.map(r=>r.split('').map(Number));
         resetPositions();
