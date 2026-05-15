@@ -507,11 +507,28 @@ function drawGhost(g){
       ctx.fill();
     });
   } else {
-    // scared face
-    ctx.fillStyle='#ffb852';
-    ctx.font='8px sans-serif';
-    ctx.textAlign='center';
-    ctx.fillText(flashing?'!':'',px,py+2);
+    // frightened face — colour inverts so it stays visible on the flashing white body
+    const fc = flashing ? '#2121de' : '#ffffff';
+
+    // eyes: two small dots
+    ctx.fillStyle = fc;
+    [-4,4].forEach(ox=>{
+      ctx.beginPath();
+      ctx.arc(px+ox, py-4, 2, 0, Math.PI*2);
+      ctx.fill();
+    });
+
+    // mouth: zigzag worried line
+    ctx.strokeStyle = fc;
+    ctx.lineWidth = 1.5;
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    ctx.moveTo(px-5, py+3);
+    ctx.lineTo(px-2.5, py);
+    ctx.lineTo(px,    py+3);
+    ctx.lineTo(px+2.5,py);
+    ctx.lineTo(px+5,  py+3);
+    ctx.stroke();
   }
 }
 
