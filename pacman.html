@@ -756,6 +756,7 @@ function loop(){
       drawLevelUp();
       if(levelTimer<=0){
         level++;
+        lives++;  // Gain a life every level up!
         dotsEaten=0; cherriesLeft=3;
         maze=RAW.map(r=>r.split('').map(Number));
         resetPositions();
