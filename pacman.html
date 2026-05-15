@@ -151,15 +151,24 @@ function cellAt(x,y){
   return maze[cy][cx];
 }
 
-function canMove(x,y,dx,dy){
-  const nx=x+dx*0.5, ny=y+dy*0.5;
-  const cx = dx<0 ? Math.floor(nx) : Math.round(nx);
-  const cy = dy<0 ? Math.floor(ny) : Math.round(ny);
+function cellOpen(cx,cy){
   if(cy<0||cy>=ROWS) return false;
-  // wrap tunnel
   if(cx<0||cx>=COLS) return true;
   const c=maze[cy][cx];
   return c!==CELL_WALL && c!==CELL_CAGE_WALL && c!==CELL_DOOR && c!==CELL_CAGE_INTERIOR;
+}
+
+// Used for movement: Math.round gives symmetric stopping distance in all directions.
+function canMove(x,y,dx,dy){
+  return cellOpen(Math.round(x+dx*0.5), Math.round(y+dy*0.5));
+}
+
+// Used for direction switching: Math.floor on negative axes prevents prematurely switching
+// direction when pressing into a wall, so Pacman keeps going in its current direction.
+function canTurn(x,y,dx,dy){
+  const cx=dx<0 ? Math.floor(x+dx*0.5) : Math.round(x+dx*0.5);
+  const cy=dy<0 ? Math.floor(y+dy*0.5) : Math.round(y+dy*0.5);
+  return cellOpen(cx,cy);
 }
 
 function canMoveGhost(x,y,dx,dy){
@@ -193,7 +202,7 @@ function updatePac(){
 
   // try next direction
   const [ndx,ndy]=DIRS[pac.nextDir];
-  if(pac.nextDir!==4 && canMove(pac.x,pac.y,ndx,ndy)) pac.dir=pac.nextDir;
+  if(pac.nextDir!==4 && canTurn(pac.x,pac.y,ndx,ndy)) pac.dir=pac.nextDir;
 
   const [dx,dy]=DIRS[pac.dir];
   if(pac.dir!==4 && canMove(pac.x,pac.y,dx,dy)){
@@ -201,7 +210,7 @@ function updatePac(){
     pac.y+=dy*pac.speed;
     // tunnel wrap
     if(pac.x<0) pac.x=COLS-0.5;
-    if(pac.x>=COLS) pac.x=0.5;
+    if(pac.x>=COLS) pac.x=0;
     // snap to grid
     if(dx!==0) pac.y=Math.round(pac.y);
     if(dy!==0) pac.x=Math.round(pac.x);
