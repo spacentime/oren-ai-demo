@@ -152,7 +152,8 @@ function cellAt(x,y){
 
 function canMove(x,y,dx,dy){
   const nx=x+dx*0.5, ny=y+dy*0.5;
-  const cx=Math.round(nx), cy=Math.round(ny);
+  const cx = dx<0 ? Math.floor(nx) : Math.round(nx);
+  const cy = dy<0 ? Math.floor(ny) : Math.round(ny);
   if(cy<0||cy>=ROWS) return false;
   // wrap tunnel
   if(cx<0||cx>=COLS) return true;
