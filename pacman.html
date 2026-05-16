@@ -11,22 +11,103 @@
         background:#000;
         display:flex; flex-direction:column;
         align-items:center; justify-content:center;
-        min-height:100vh;
+        min-height:100vh; min-height:100svh;
         font-family:'Press Start 2P', monospace;
+        overflow:hidden;
+        touch-action:none;
       }
-      #wrapper { position:relative; display:inline-block; }
+      #wrapper { position:relative; display:inline-block; flex-shrink:0; }
       canvas { display:block; image-rendering:pixelated; }
       #crt {
         position:absolute; top:0; left:0; width:100%; height:100%;
         pointer-events:none; z-index:10;
         background: repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,0.13) 2px,rgba(0,0,0,0.13) 4px);
       }
+
+      /* ── MOBILE CONTROLS ── */
+      #mobile-controls {
+        display:none; /* shown via JS when touch device */
+        flex-direction:row;
+        align-items:center;
+        gap:16px;
+        margin-top:14px;
+        flex-shrink:0;
+      }
+
+      /* D-pad */
+      #dpad {
+        display:grid;
+        grid-template-areas: '. up .' 'left center right' '. down .';
+        grid-template-columns: repeat(3, 64px);
+        grid-template-rows: repeat(3, 64px);
+        gap:6px;
+      }
+      #dpad button {
+        width:64px; height:64px;
+        background:rgba(255,255,255,0.08);
+        border:2px solid rgba(255,224,0,0.55);
+        border-radius:12px;
+        color:#FFE000;
+        font-size:22px;
+        cursor:pointer;
+        touch-action:manipulation;
+        -webkit-user-select:none; user-select:none;
+        display:flex; align-items:center; justify-content:center;
+      }
+      #dpad button:active { background:rgba(255,224,0,0.28); }
+      .dpad-up    { grid-area:up; }
+      .dpad-left  { grid-area:left; }
+      .dpad-center{ grid-area:center; border:2px solid rgba(255,255,255,0.08); border-radius:50%; background:rgba(255,255,255,0.03); }
+      .dpad-right { grid-area:right; }
+      .dpad-down  { grid-area:down; }
+
+      /* Action buttons */
+      #action-btns {
+        display:flex; flex-direction:column;
+        gap:10px;
+        height:204px; /* matches dpad height: 3×64 + 2×6 */
+      }
+      #action-btns button {
+        flex:1; width:78px;
+        background:rgba(255,255,255,0.08);
+        border:2px solid rgba(255,224,0,0.55);
+        border-radius:12px;
+        color:#FFE000;
+        cursor:pointer;
+        touch-action:manipulation;
+        -webkit-user-select:none; user-select:none;
+        display:flex; flex-direction:column;
+        align-items:center; justify-content:center;
+        gap:5px;
+      }
+      #action-btns button:active { background:rgba(255,224,0,0.28); }
+      .btn-icon  { font-size:22px; line-height:1; }
+      .btn-label { font-size:7px; letter-spacing:0.05em; }
     </style>
   </head>
 <body>
 <div id="wrapper">
   <canvas id="c"></canvas>
   <div id="crt"></div>
+</div>
+<div id="mobile-controls">
+  <div id="dpad">
+    <button type="button" class="dpad-up"    data-dir="1">▲</button>
+    <button type="button" class="dpad-left"  data-dir="2">◀</button>
+    <div    class="dpad-center"></div>
+    <button type="button" class="dpad-right" data-dir="0">▶</button>
+    <button type="button" class="dpad-down"  data-dir="3">▼</button>
+  </div>
+  <div id="action-btns">
+    <button type="button" id="btn-primary">
+      <span class="btn-icon">▶</span>
+      <span class="btn-label">PLAY</span>
+    </button>
+    <button type="button" id="btn-exit">
+      <span class="btn-icon">✕</span>
+      <span class="btn-label">EXIT</span>
+    </button>
+  </div>
 </div>
 <script src="pacman.js"></script>
 </body>
