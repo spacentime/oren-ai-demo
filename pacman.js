@@ -857,10 +857,9 @@ function updateMobileButtons(){
 
   // menu-mode: wide horizontal button, no D-pad
   const isMenu = state==='TITLE' || state==='GAMEOVER' || state==='EXIT_CONFIRM';
-  const modeChanged = mobileControls.classList.contains('menu-mode') !== isMenu;
   mobileControls.classList.toggle('menu-mode',  isMenu);
   mobileControls.classList.toggle('game-mode', !isMenu);
-  if(modeChanged) resizeCanvas();
+  resizeCanvas(); // always resize on state change so canvas fits before next paint
 
   const [pi='', pl='', pv=false] = PRIMARY_CFG[state] || [];
   actionBtns.style.display  = pv ? '' : 'none';
@@ -877,9 +876,9 @@ document.querySelectorAll('#dpad [data-dir]').forEach(btn => {
   btn.addEventListener('touchstart', e => {
     e.preventDefault();
     if(AC.state==='suspended') AC.resume();
-    if(state==='TITLE'){ state='PLAYING'; resetPositions(); return; }
-    if(state==='GAMEOVER'){ restartGame(); return; }
-    if(state==='EXIT_CONFIRM'){ state=exitPrevState; return; }
+    if(state==='TITLE'){ state='PLAYING'; resetPositions(); prevMobileState=''; updateMobileButtons(); return; }
+    if(state==='GAMEOVER'){ restartGame(); prevMobileState=''; updateMobileButtons(); return; }
+    if(state==='EXIT_CONFIRM'){ state=exitPrevState; prevMobileState=''; updateMobileButtons(); return; }
     if(state==='PLAYING'||state==='PAUSED'){ state='PLAYING'; pac.nextDir=dir; }
   }, { passive:false });
 });
@@ -891,6 +890,8 @@ btnPrimary.addEventListener('touchstart', e => {
   if(state==='TITLE')             { state='PLAYING'; resetPositions(); }
   else if(state==='GAMEOVER')     { restartGame(); }
   else if(state==='EXIT_CONFIRM') { restartGame(); state='TITLE'; }
+  prevMobileState = '';
+  updateMobileButtons();
 }, { passive:false });
 
 // Back button (device or browser) → exit confirm; second back → cancel
