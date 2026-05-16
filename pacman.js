@@ -82,6 +82,7 @@ const HALF = TILE/2;
 let score=0, lives=3, dotsEaten=0, level=1;
 let state='TITLE'; // TITLE PLAYING PAUSED EXIT_CONFIRM DEAD LEVELUP GAMEOVER
 let exitPrevState='PLAYING';
+let isMobile=false;
 let titleBlink=0, deadTimer=0, levelTimer=0;
 let powerTimer=0, ghostEatChain=0, powerSession=0;
 let globalDot=0; // dot animation phase
@@ -398,10 +399,10 @@ document.addEventListener('keydown',e=>{
   if(state==='TITLE' && e.code==='Space'){ state='PLAYING'; resetPositions(); return; }
   if(state==='GAMEOVER' && e.code==='Space'){ restartGame(); return; }
   if(e.code==='Space' && (state==='PLAYING'||state==='PAUSED')){ state=state==='PLAYING'?'PAUSED':'PLAYING'; e.preventDefault(); return; }
-  if(e.code==='Escape' && (state==='PLAYING'||state==='PAUSED')){ exitPrevState=state; state='EXIT_CONFIRM'; e.preventDefault(); return; }
+  if((e.code==='Escape'||e.code==='Backspace') && (state==='PLAYING'||state==='PAUSED')){ exitPrevState=state; state='EXIT_CONFIRM'; e.preventDefault(); return; }
   if(state==='EXIT_CONFIRM'){
     if(e.code==='KeyY'||e.code==='Enter'){ restartGame(); state='TITLE'; }
-    else if(e.code==='KeyN'||e.code==='Escape'){ state=exitPrevState; }
+    else if(e.code==='KeyN'||e.code==='Escape'||e.code==='Backspace'){ state=exitPrevState; }
     e.preventDefault(); return;
   }
   if(state!=='PLAYING') return;
@@ -664,7 +665,7 @@ function drawTitle(){
   if(Math.floor(titleBlink/20)%2===0){
     ctx.fillStyle='#FFE000'; ctx.shadowColor='#FFE000'; ctx.shadowBlur=10;
     ctx.font='12px "Press Start 2P"';
-    ctx.fillText('PRESS SPACE TO START',canvas.width/2,380);
+    ctx.fillText(isMobile?'TAP PLAY TO START':'PRESS SPACE TO START',canvas.width/2,380);
     ctx.shadowBlur=0;
   }
 
@@ -715,7 +716,12 @@ function drawExitConfirm(){
   ctx.fillText('EXIT TO MENU?',canvas.width/2,by+36);
   ctx.font='9px "Press Start 2P"';
   ctx.fillStyle='#FFE000';
-  ctx.fillText('[Y] YES       [N] NO',canvas.width/2,by+76);
+  if(isMobile){
+    ctx.fillText('TAP YES TO EXIT',canvas.width/2,by+64);
+    ctx.fillText('BACK = CANCEL', canvas.width/2,by+82);
+  } else {
+    ctx.fillText('[Y] YES       [N] NO',canvas.width/2,by+76);
+  }
 }
 
 // ── MAIN LOOP ─────────────────────────────────────────────
@@ -819,48 +825,50 @@ function drawParticles(){
 // ── MOBILE SUPPORT ───────────────────────────────────────
 const mobileControls = document.getElementById('mobile-controls');
 const btnPrimary     = document.getElementById('btn-primary');
-const btnExit        = document.getElementById('btn-exit');
+const actionBtns     = document.getElementById('action-btns');
 
 function resizeCanvas(){
-  const isMobile = window.matchMedia('(pointer:coarse)').matches || window.innerWidth < 768;
+  isMobile = window.matchMedia('(pointer:coarse)').matches;
   mobileControls.style.display = isMobile ? 'flex' : 'none';
-  // dpad: 3×64px + 2×6px gap = 204px tall + 14px margin-top
-  const controlsH = isMobile ? 218 : 0;
+  // menu mode: 64px button + 14px margin; game mode: 204px dpad + 14px margin
+  const isMenuMode = mobileControls.classList.contains('menu-mode');
+  const controlsH  = isMobile ? (isMenuMode ? 80 : 218) : 0;
   const scaleX = window.innerWidth / canvas.width;
   const scaleY = (window.innerHeight - controlsH) / canvas.height;
   const scale  = Math.min(scaleX, scaleY, 1);
   canvas.style.width  = Math.floor(canvas.width  * scale) + 'px';
   canvas.style.height = Math.floor(canvas.height * scale) + 'px';
 }
+mobileControls.classList.add('menu-mode'); // game starts on TITLE screen
 window.addEventListener('resize', resizeCanvas);
 resizeCanvas();
 
-// Button config per state: [icon, label, visible]
+// Button shown only on menu-like states; gameplay uses D-pad only
 const PRIMARY_CFG = {
-  TITLE:        ['▶','PLAY',   true],
-  PLAYING:      ['⏸','PAUSE',  true],
-  PAUSED:       ['▶','RESUME', true],
-  GAMEOVER:     ['▶','PLAY',   true],
-  EXIT_CONFIRM: ['✓','YES',    true],
-};
-const EXIT_CFG = {
-  PLAYING:      ['✕','EXIT',   true],
-  PAUSED:       ['✕','EXIT',   true],
-  EXIT_CONFIRM: ['✗','NO',     true],
+  TITLE:        ['▶','PLAY', true],
+  GAMEOVER:     ['▶','PLAY', true],
+  EXIT_CONFIRM: ['✓','YES',  true],
 };
 
 let prevMobileState = '';
 function updateMobileButtons(){
   if(state === prevMobileState) return;
   prevMobileState = state;
+
+  // menu-mode: wide horizontal button, no D-pad
+  const isMenu = state==='TITLE' || state==='GAMEOVER' || state==='EXIT_CONFIRM';
+  const modeChanged = mobileControls.classList.contains('menu-mode') !== isMenu;
+  mobileControls.classList.toggle('menu-mode',  isMenu);
+  mobileControls.classList.toggle('game-mode', !isMenu);
+  if(modeChanged) resizeCanvas();
+
   const [pi='', pl='', pv=false] = PRIMARY_CFG[state] || [];
-  const [ei='', el='', ev=false] = EXIT_CFG[state]    || [];
-  btnPrimary.style.display = pv ? '' : 'none';
-  btnExit.style.display    = ev ? '' : 'none';
-  btnPrimary.querySelector('.btn-icon').textContent  = pi;
-  btnPrimary.querySelector('.btn-label').textContent = pl;
-  btnExit.querySelector('.btn-icon').textContent     = ei;
-  btnExit.querySelector('.btn-label').textContent    = el;
+  actionBtns.style.display  = pv ? '' : 'none';
+  btnPrimary.style.display  = pv ? '' : 'none';
+  if(pv){
+    btnPrimary.querySelector('.btn-icon').textContent  = pi;
+    btnPrimary.querySelector('.btn-label').textContent = pl;
+  }
 }
 
 // D-pad: set direction (also handles TITLE/GAMEOVER taps to start)
@@ -876,24 +884,27 @@ document.querySelectorAll('#dpad [data-dir]').forEach(btn => {
   }, { passive:false });
 });
 
-// Primary action button (PLAY / PAUSE / RESUME / YES)
+// Primary action button (PLAY / YES)
 btnPrimary.addEventListener('touchstart', e => {
   e.preventDefault();
   if(AC.state==='suspended') AC.resume();
-  if(state==='TITLE')        { state='PLAYING'; resetPositions(); }
-  else if(state==='PLAYING') { state='PAUSED'; }
-  else if(state==='PAUSED')  { state='PLAYING'; }
-  else if(state==='GAMEOVER'){ restartGame(); }
-  else if(state==='EXIT_CONFIRM'){ restartGame(); state='TITLE'; }
+  if(state==='TITLE')             { state='PLAYING'; resetPositions(); }
+  else if(state==='GAMEOVER')     { restartGame(); }
+  else if(state==='EXIT_CONFIRM') { restartGame(); state='TITLE'; }
 }, { passive:false });
 
-// Exit button (EXIT / NO)
-btnExit.addEventListener('touchstart', e => {
-  e.preventDefault();
+// Back button (device or browser) → exit confirm; second back → cancel
+history.pushState({pacman:true}, '');
+window.addEventListener('popstate', ()=>{
   if(AC.state==='suspended') AC.resume();
-  if(state==='PLAYING'||state==='PAUSED'){ exitPrevState=state; state='EXIT_CONFIRM'; }
-  else if(state==='EXIT_CONFIRM')        { state=exitPrevState; }
-}, { passive:false });
+  if(state==='PLAYING'||state==='PAUSED'){
+    exitPrevState=state; state='EXIT_CONFIRM';
+    history.pushState({pacman:true}, '');
+  } else if(state==='EXIT_CONFIRM'){
+    state=exitPrevState;
+    history.pushState({pacman:true}, '');
+  }
+});
 
 // Unlock AudioContext on first touch (required on iOS)
 document.addEventListener('touchstart', ()=>{ if(AC.state==='suspended') AC.resume(); }, { once:true });
