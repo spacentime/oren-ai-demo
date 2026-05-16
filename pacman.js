@@ -80,7 +80,8 @@ const TILE = CS;
 const HALF = TILE/2;
 
 let score=0, lives=3, dotsEaten=0, level=1;
-let state='TITLE'; // TITLE PLAYING DEAD LEVELUP GAMEOVER
+let state='TITLE'; // TITLE PLAYING PAUSED EXIT_CONFIRM DEAD LEVELUP GAMEOVER
+let exitPrevState='PLAYING';
 let titleBlink=0, deadTimer=0, levelTimer=0;
 let powerTimer=0, ghostEatChain=0, powerSession=0;
 let globalDot=0; // dot animation phase
@@ -396,6 +397,13 @@ function drawCherry(){
 document.addEventListener('keydown',e=>{
   if(state==='TITLE' && e.code==='Space'){ state='PLAYING'; resetPositions(); return; }
   if(state==='GAMEOVER' && e.code==='Space'){ restartGame(); return; }
+  if(e.code==='Space' && (state==='PLAYING'||state==='PAUSED')){ state=state==='PLAYING'?'PAUSED':'PLAYING'; e.preventDefault(); return; }
+  if(e.code==='Escape' && (state==='PLAYING'||state==='PAUSED')){ exitPrevState=state; state='EXIT_CONFIRM'; e.preventDefault(); return; }
+  if(state==='EXIT_CONFIRM'){
+    if(e.code==='KeyY'||e.code==='Enter'){ restartGame(); state='TITLE'; }
+    else if(e.code==='KeyN'||e.code==='Escape'){ state=exitPrevState; }
+    e.preventDefault(); return;
+  }
   if(state!=='PLAYING') return;
   if(e.code==='ArrowRight'||e.code==='KeyD') pac.nextDir=0;
   if(e.code==='ArrowUp'   ||e.code==='KeyW') pac.nextDir=1;
@@ -692,6 +700,24 @@ function drawLevelUp(){
   ctx.shadowBlur=0;
 }
 
+function drawExitConfirm(){
+  ctx.fillStyle='rgba(0,0,0,0.65)';
+  ctx.fillRect(0,0,canvas.width,canvas.height);
+  const bw=230, bh=110, bx=canvas.width/2-bw/2, by=canvas.height/2-bh/2;
+  ctx.fillStyle='#111';
+  ctx.strokeStyle='#FFE000';
+  ctx.lineWidth=2;
+  ctx.fillRect(bx,by,bw,bh);
+  ctx.strokeRect(bx,by,bw,bh);
+  ctx.textAlign='center';
+  ctx.font='11px "Press Start 2P"';
+  ctx.fillStyle='#fff';
+  ctx.fillText('EXIT TO MENU?',canvas.width/2,by+36);
+  ctx.font='9px "Press Start 2P"';
+  ctx.fillStyle='#FFE000';
+  ctx.fillText('[Y] YES       [N] NO',canvas.width/2,by+76);
+}
+
 // ── MAIN LOOP ─────────────────────────────────────────────
 function loop(){
   globalDot++;
@@ -709,6 +735,17 @@ function loop(){
     if(pac.alive) drawPac();
     drawHUD();
 
+    if(state==='EXIT_CONFIRM'){ drawExitConfirm(); }
+    if(state==='PAUSED'){
+      ctx.fillStyle='rgba(0,0,0,0.45)';
+      ctx.fillRect(0,0,canvas.width,canvas.height);
+      ctx.fillStyle='#FFE000';
+      ctx.font='bold 28px monospace';
+      ctx.textAlign='center';
+      ctx.fillText('PAUSED',canvas.width/2,canvas.height/2);
+      ctx.font='14px monospace';
+      ctx.fillText('press space to resume',canvas.width/2,canvas.height/2+28);
+    }
     if(state==='PLAYING'){
       if(powerTimer>0){ powerTimer--; if(powerTimer===0) ghostEatChain=0; }
       updatePac();
