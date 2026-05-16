@@ -26,7 +26,7 @@
 
       /* ── MOBILE CONTROLS ── */
       #mobile-controls {
-        display:none; /* shown via JS when touch device */
+        display:none;
         flex-direction:row;
         align-items:center;
         gap:16px;
@@ -47,10 +47,8 @@
         background:rgba(255,255,255,0.08);
         border:2px solid rgba(255,224,0,0.55);
         border-radius:12px;
-        color:#FFE000;
-        font-size:22px;
-        cursor:pointer;
-        touch-action:manipulation;
+        color:#FFE000; font-size:22px;
+        cursor:pointer; touch-action:manipulation;
         -webkit-user-select:none; user-select:none;
         display:flex; align-items:center; justify-content:center;
       }
@@ -61,28 +59,48 @@
       .dpad-right { grid-area:right; }
       .dpad-down  { grid-area:down; }
 
-      /* Action buttons */
+      /* Action buttons — shared base */
       #action-btns {
-        display:flex; flex-direction:column;
+        display:flex;
         gap:10px;
-        height:204px; /* matches dpad height: 3×64 + 2×6 */
       }
       #action-btns button {
-        flex:1; width:78px;
         background:rgba(255,255,255,0.08);
         border:2px solid rgba(255,224,0,0.55);
         border-radius:12px;
         color:#FFE000;
-        cursor:pointer;
-        touch-action:manipulation;
+        cursor:pointer; touch-action:manipulation;
         -webkit-user-select:none; user-select:none;
-        display:flex; flex-direction:column;
-        align-items:center; justify-content:center;
-        gap:5px;
+        display:flex; align-items:center; justify-content:center;
       }
       #action-btns button:active { background:rgba(255,224,0,0.28); }
-      .btn-icon  { font-size:22px; line-height:1; }
-      .btn-label { font-size:7px; letter-spacing:0.05em; }
+      .btn-icon  { line-height:1; }
+      .btn-label { letter-spacing:0.05em; }
+
+      /* ── GAME MODE: dpad + stacked action buttons ── */
+      #mobile-controls.game-mode #action-btns {
+        flex-direction:column;
+        height:204px; /* 3×64 + 2×6 = matches dpad */
+      }
+      #mobile-controls.game-mode #action-btns button {
+        flex:1; width:78px;
+        flex-direction:column; gap:5px;
+      }
+      #mobile-controls.game-mode .btn-icon  { font-size:22px; }
+      #mobile-controls.game-mode .btn-label { font-size:7px; }
+
+      /* ── MENU MODE: no dpad, wide horizontal play button ── */
+      #mobile-controls.menu-mode #dpad { display:none; }
+      #mobile-controls.menu-mode #action-btns {
+        flex-direction:row;
+        justify-content:center;
+      }
+      #mobile-controls.menu-mode #action-btns button {
+        width:220px; height:64px;
+        flex-direction:row; gap:12px;
+      }
+      #mobile-controls.menu-mode .btn-icon  { font-size:26px; }
+      #mobile-controls.menu-mode .btn-label { font-size:13px; }
     </style>
   </head>
 <body>
@@ -102,10 +120,6 @@
     <button type="button" id="btn-primary">
       <span class="btn-icon">▶</span>
       <span class="btn-label">PLAY</span>
-    </button>
-    <button type="button" id="btn-exit">
-      <span class="btn-icon">✕</span>
-      <span class="btn-label">EXIT</span>
     </button>
   </div>
 </div>
