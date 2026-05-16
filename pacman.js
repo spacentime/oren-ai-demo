@@ -720,6 +720,7 @@ function drawExitConfirm(){
 
 // ── MAIN LOOP ─────────────────────────────────────────────
 function loop(){
+  updateMobileButtons();
   globalDot++;
   ctx.fillStyle='#000';
   ctx.fillRect(0,0,canvas.width,canvas.height);
@@ -814,5 +815,89 @@ function drawParticles(){
   }
   ctx.globalAlpha=1;
 }
+
+// ── MOBILE SUPPORT ───────────────────────────────────────
+const mobileControls = document.getElementById('mobile-controls');
+const btnPrimary     = document.getElementById('btn-primary');
+const btnExit        = document.getElementById('btn-exit');
+
+function resizeCanvas(){
+  const isMobile = window.matchMedia('(pointer:coarse)').matches || window.innerWidth < 768;
+  mobileControls.style.display = isMobile ? 'flex' : 'none';
+  // dpad: 3×64px + 2×6px gap = 204px tall + 14px margin-top
+  const controlsH = isMobile ? 218 : 0;
+  const scaleX = window.innerWidth / canvas.width;
+  const scaleY = (window.innerHeight - controlsH) / canvas.height;
+  const scale  = Math.min(scaleX, scaleY, 1);
+  canvas.style.width  = Math.floor(canvas.width  * scale) + 'px';
+  canvas.style.height = Math.floor(canvas.height * scale) + 'px';
+}
+window.addEventListener('resize', resizeCanvas);
+resizeCanvas();
+
+// Button config per state: [icon, label, visible]
+const PRIMARY_CFG = {
+  TITLE:        ['▶','PLAY',   true],
+  PLAYING:      ['⏸','PAUSE',  true],
+  PAUSED:       ['▶','RESUME', true],
+  GAMEOVER:     ['▶','PLAY',   true],
+  EXIT_CONFIRM: ['✓','YES',    true],
+};
+const EXIT_CFG = {
+  PLAYING:      ['✕','EXIT',   true],
+  PAUSED:       ['✕','EXIT',   true],
+  EXIT_CONFIRM: ['✗','NO',     true],
+};
+
+let prevMobileState = '';
+function updateMobileButtons(){
+  if(state === prevMobileState) return;
+  prevMobileState = state;
+  const [pi='', pl='', pv=false] = PRIMARY_CFG[state] || [];
+  const [ei='', el='', ev=false] = EXIT_CFG[state]    || [];
+  btnPrimary.style.display = pv ? '' : 'none';
+  btnExit.style.display    = ev ? '' : 'none';
+  btnPrimary.querySelector('.btn-icon').textContent  = pi;
+  btnPrimary.querySelector('.btn-label').textContent = pl;
+  btnExit.querySelector('.btn-icon').textContent     = ei;
+  btnExit.querySelector('.btn-label').textContent    = el;
+}
+
+// D-pad: set direction (also handles TITLE/GAMEOVER taps to start)
+document.querySelectorAll('#dpad [data-dir]').forEach(btn => {
+  const dir = +btn.dataset.dir;
+  btn.addEventListener('touchstart', e => {
+    e.preventDefault();
+    if(AC.state==='suspended') AC.resume();
+    if(state==='TITLE'){ state='PLAYING'; resetPositions(); return; }
+    if(state==='GAMEOVER'){ restartGame(); return; }
+    if(state==='EXIT_CONFIRM'){ state=exitPrevState; return; }
+    if(state==='PLAYING'||state==='PAUSED'){ state='PLAYING'; pac.nextDir=dir; }
+  }, { passive:false });
+});
+
+// Primary action button (PLAY / PAUSE / RESUME / YES)
+btnPrimary.addEventListener('touchstart', e => {
+  e.preventDefault();
+  if(AC.state==='suspended') AC.resume();
+  if(state==='TITLE')        { state='PLAYING'; resetPositions(); }
+  else if(state==='PLAYING') { state='PAUSED'; }
+  else if(state==='PAUSED')  { state='PLAYING'; }
+  else if(state==='GAMEOVER'){ restartGame(); }
+  else if(state==='EXIT_CONFIRM'){ restartGame(); state='TITLE'; }
+}, { passive:false });
+
+// Exit button (EXIT / NO)
+btnExit.addEventListener('touchstart', e => {
+  e.preventDefault();
+  if(AC.state==='suspended') AC.resume();
+  if(state==='PLAYING'||state==='PAUSED'){ exitPrevState=state; state='EXIT_CONFIRM'; }
+  else if(state==='EXIT_CONFIRM')        { state=exitPrevState; }
+}, { passive:false });
+
+// Unlock AudioContext on first touch (required on iOS)
+document.addEventListener('touchstart', ()=>{ if(AC.state==='suspended') AC.resume(); }, { once:true });
+// Prevent scroll/bounce during gameplay
+document.addEventListener('touchmove', e=>e.preventDefault(), { passive:false });
 
 loop();
