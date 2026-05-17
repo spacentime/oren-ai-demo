@@ -30,7 +30,8 @@
         flex-direction:row;
         align-items:center;
         gap:16px;
-        margin-top:14px;
+        margin-top:6px;
+        margin-bottom: 16px;
         flex-shrink:0;
       }
 
@@ -63,7 +64,11 @@
       #action-btns {
         display:flex;
         gap:10px;
+        margin-top: -360px;
+        z-index: 50;
+        background-color: #000;
       }
+
       #action-btns button {
         background:rgba(255,255,255,0.08);
         border:2px solid rgba(255,224,0,0.55);
@@ -96,7 +101,7 @@
         justify-content:center;
       }
       #mobile-controls.menu-mode #action-btns button {
-        width:220px; height:64px;
+        width:160px; height:64px;
         flex-direction:row; gap:12px;
       }
       #mobile-controls.menu-mode .btn-icon  { font-size:26px; }
@@ -120,6 +125,10 @@
     <button type="button" id="btn-primary">
       <span class="btn-icon">▶</span>
       <span class="btn-label">PLAY</span>
+    </button>
+    <button type="button" id="btn-secondary">
+      <span class="btn-icon">❌</span>
+      <span class="btn-label">NO</span>
     </button>
   </div>
 </div>
