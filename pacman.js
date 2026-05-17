@@ -90,7 +90,65 @@ let pointBubbles=[];
 let cherry=null, cherrySpawnTimer=600, cherriesLeft=3;
 
 // Pac-Man
-let pac = { x:13.5, y:21, dir:0, nextDir:0, mouthAngle:0, mouthOpen:true, speed:0.1, alive:true };
+class Pac {
+  // Private field
+  #dir = 4;
+
+  constructor() {
+    // Public properties
+    this.x = 13.5;
+    this.y = 21;
+    this.nextDir = 0;
+    this.mouthAngle = 0;
+    this.mouthOpen = true;
+    this.speed = 0.1;
+    this.alive = true;
+  }
+
+  // Public getter
+  get dir() {
+    return this.#dir;
+  }
+
+  resetPosition() {
+    this.x=13.5; this.y=21; this.changeDirection(4); this.nextDir=4; this.alive=true;
+  }
+  // No setter → dir cannot be changed directly
+
+  // Public method to safely change direction
+  changeDirection(newDir) {
+    if (newDir < 0 || newDir > 4) {
+      throw new Error("dir must be between 0 and 4");
+    }
+    this.#dir = newDir;
+  }
+
+  isMoving() {
+    return this.#dir !== 4;
+  }
+
+  #cellOpen(cx,cy){
+    if(cy<0||cy>=ROWS) return false;
+    if(cx<0||cx>=COLS) return true;
+    const c=maze[cy][cx];
+    return c!==CELL_WALL && c!==CELL_CAGE_WALL && c!==CELL_DOOR && c!==CELL_CAGE_INTERIOR;
+  }
+
+  // Used for movement: Math.round gives symmetric stopping distance in all directions.
+  canMove(dx,dy){
+    return this.#cellOpen(Math.round(this.x+dx*0.5), Math.round(this.y+dy*0.5));
+  }
+
+  // Used for direction switching: Math.floor on negative axes prevents prematurely switching
+  // direction when pressing into a wall, so Pacman keeps going in its current direction.
+  canTurn(dx,dy){
+    const cx=dx<0 ? Math.floor(this.x+dx*0.5) : Math.round(this.x+dx*0.5);
+    const cy=dy<0 ? Math.floor(this.y+dy*0.5) : Math.round(this.y+dy*0.5);
+    return this.#cellOpen(cx,cy);
+  }
+}
+
+let pac = new Pac();
 
 // direction vectors [dx,dy]
 const DIRS = [[1,0],[0,-1],[-1,0],[0,1],[0,0]];
@@ -100,7 +158,7 @@ const DIRS = [[1,0],[0,-1],[-1,0],[0,1],[0,0]];
 const GHOST_COLORS = ['#FF0000','#FFB8FF','#00FFFF','#FFB852'];
 const GHOST_NAMES  = ['BLINKY','PINKY','INKY','CLYDE'];
 const GHOST_HOME   = [[13,10],[13,13],[12,13],[14,13]];
-
+ 
 function makeGhost(i){
   return {
     x: GHOST_HOME[i][0], y: GHOST_HOME[i][1],
@@ -112,35 +170,25 @@ function makeGhost(i){
     path: [], pathIdx: 0,
     cellX: -1, cellY: -1,
     immuneSession: -1,
+    radius: HALF-1,
   };
 }
 let ghosts = [0,1,2,3].map(makeGhost);
+let titleGhosts = [0,1,2,3].map((g, i) => { 
+  g = makeGhost(g);
+  g.radius = TILE/1.3;
+  g.speed = 0;
+  g.dir = i;
+  g.x = (i*(HALF-3))+HALF/3;
+  g.y = 2;
+  return g;
+}); 
 
 // ── HELPERS ──────────────────────────────────────────────
 function cellAt(x,y){
   const cx=Math.round(x), cy=Math.round(y);
   if(cy<0||cy>=ROWS||cx<0||cx>=COLS) return 1;
   return maze[cy][cx];
-}
-
-function cellOpen(cx,cy){
-  if(cy<0||cy>=ROWS) return false;
-  if(cx<0||cx>=COLS) return true;
-  const c=maze[cy][cx];
-  return c!==CELL_WALL && c!==CELL_CAGE_WALL && c!==CELL_DOOR && c!==CELL_CAGE_INTERIOR;
-}
-
-// Used for movement: Math.round gives symmetric stopping distance in all directions.
-function canMove(x,y,dx,dy){
-  return cellOpen(Math.round(x+dx*0.5), Math.round(y+dy*0.5));
-}
-
-// Used for direction switching: Math.floor on negative axes prevents prematurely switching
-// direction when pressing into a wall, so Pacman keeps going in its current direction.
-function canTurn(x,y,dx,dy){
-  const cx=dx<0 ? Math.floor(x+dx*0.5) : Math.round(x+dx*0.5);
-  const cy=dy<0 ? Math.floor(y+dy*0.5) : Math.round(y+dy*0.5);
-  return cellOpen(cx,cy);
 }
 
 function canMoveGhost(x,y,dx,dy){
@@ -156,7 +204,7 @@ function canMoveGhost(x,y,dx,dy){
 
 // ── UPDATE ───────────────────────────────────────────────
 function resetPositions(){
-  pac.x=13.5; pac.y=21; pac.dir=4; pac.nextDir=4; pac.alive=true;
+  pac.resetPosition();
   ghosts=[0,1,2,3].map(makeGhost);
   powerTimer=0; ghostEatChain=0; pointBubbles=[]; cherry=null; cherrySpawnTimer=600;
 }
@@ -169,15 +217,8 @@ function eatCell(){
   if(dotsEaten>=totalDots){ state='LEVELUP'; levelTimer=120; }
 }
 
-function updatePac(){
-  if(!pac.alive) return;
 
-  // try next direction
-  const [ndx,ndy]=DIRS[pac.nextDir];
-  if(pac.nextDir!==4 && canTurn(pac.x,pac.y,ndx,ndy)) pac.dir=pac.nextDir;
-
-  const [dx,dy]=DIRS[pac.dir];
-  if(pac.dir!==4 && canMove(pac.x,pac.y,dx,dy)){
+function movePacman(pac, dx, dy){ 
     pac.x+=dx*pac.speed;
     pac.y+=dy*pac.speed;
     // tunnel wrap
@@ -186,11 +227,25 @@ function updatePac(){
     // snap to grid
     if(dx!==0) pac.y=Math.round(pac.y);
     if(dy!==0) pac.x=Math.round(pac.x);
+}
+
+function updatePac(forceDraw=false){
+  if(!(pac.alive || forceDraw)) return;
+
+  // try next direction
+  const [ndx,ndy]=DIRS[pac.nextDir];
+  if(pac.nextDir!==4 && (pac.canTurn(ndx,ndy))) pac.changeDirection(pac.nextDir);
+
+  const [dx,dy]=DIRS[pac.dir];
+
+  if(!forceDraw && pac.isMoving() && pac.canMove(dx,dy)){
+    movePacman(pac, dx, dy); 
   }
 
-  // mouth animation
-  pac.mouthAngle = pac.mouthOpen ? pac.mouthAngle+0.2 : pac.mouthAngle-0.2;
-  if(pac.mouthAngle>0.35){ pac.mouthOpen=false; }
+  // Calculate mouth animation position based on whether we're opening or closing, and switch direction if we hit the limits.
+  const mouthSpeed = 0.1;
+  pac.mouthAngle = pac.mouthOpen ? pac.mouthAngle+mouthSpeed : pac.mouthAngle-mouthSpeed;
+  if(pac.mouthAngle>0.6){ pac.mouthOpen=false; }
   if(pac.mouthAngle<0.01){ pac.mouthOpen=true; }
 
   eatCell();
@@ -468,9 +523,8 @@ function drawMaze(){
   });
 }
 
-function drawPac(){
+function drawPac(radius=HALF-1){
   const px=pac.x*CS+HALF, py=pac.y*CS+HALF+TOP;
-  const r=HALF-1;
   const ma=pac.mouthAngle;
 
   ctx.shadowColor='#ffff00';
@@ -479,14 +533,14 @@ function drawPac(){
 
   // rotation based on dir
   const angles=[[0],[Math.PI*1.5],[Math.PI],[Math.PI*0.5]];
-  const rot = pac.dir<4 ? angles[pac.dir][0] : 0;
+  const rot = pac.isMoving() ? angles[pac.dir][0] : 0;
 
   ctx.save();
   ctx.translate(px,py);
   ctx.rotate(rot);
   ctx.beginPath();
   ctx.moveTo(0,0);
-  ctx.arc(0,0,r,ma,Math.PI*2-ma);
+  ctx.arc(0,0,radius,ma,Math.PI*2-ma); // draw as a circle with a wedge missing for the mouth
   ctx.closePath();
   ctx.fill();
   ctx.restore();
@@ -495,7 +549,11 @@ function drawPac(){
 
 function drawGhost(g){
   const px=g.x*CS+HALF, py=g.y*CS+HALF+TOP;
-  const r=HALF-1;
+  const radius = g.radius || HALF-1;
+  const eyeRadiusX = radius / 3;
+  const eyeRadiusY = radius / 2.25;
+  const eyeOffsetX = radius / 2.5;
+  const pupilRadius = eyeRadiusX * 2 / 3;
 
   if(g.eaten){
     // derive travel direction from the active path waypoint
@@ -509,11 +567,11 @@ function drawGhost(g){
     [-4,4].forEach(ox=>{
       ctx.fillStyle='#ffffff';
       ctx.beginPath();
-      ctx.ellipse(px+ox, py-3, 3, 4, 0, 0, Math.PI*2);
+      ctx.ellipse(px+ox, py-3, eyeRadiusX, eyeRadiusY, 0, 0, Math.PI*2); // eaten ghost eyes
       ctx.fill();
       ctx.fillStyle='#000099';
       ctx.beginPath();
-      ctx.arc(px+ox+edx*2, py-3+edy*2, 2, 0, Math.PI*2);
+      ctx.arc(px+ox+edx*2, py-3+edy*2, pupilRadius, 0, Math.PI*2);
       ctx.fill();
     });
     return;
@@ -531,13 +589,13 @@ function drawGhost(g){
 
   // body
   ctx.beginPath();
-  ctx.arc(px,py-2,r,Math.PI,0);
+  ctx.arc(px,py-2,radius,Math.PI,0);
   // wavy bottom
-  const wb=py+r-4;
-  ctx.lineTo(px+r,wb);
-  const segs=3, sw=(r*2)/segs;
+  const wb=py+radius-4;
+  ctx.lineTo(px+radius,wb);
+  const segs=3, sw=(radius*2)/segs;
   for(let i=segs;i>=0;i--){
-    const bx=px-r+i*sw;
+    const bx=px-radius+i*sw;
     const by=i%2===0?wb:wb+4;
     ctx.lineTo(bx,by);
   }
@@ -547,16 +605,16 @@ function drawGhost(g){
 
   if(!frightened){
     // eyes
-    [-4,4].forEach(ox=>{
+    [-eyeOffsetX,eyeOffsetX].forEach(ox=>{
       ctx.fillStyle=eyeColor;
       ctx.beginPath();
-      ctx.ellipse(px+ox,py-3,3,4,0,0,Math.PI*2);
+      ctx.ellipse(px+ox,py-3,eyeRadiusX,eyeRadiusY,0,0,Math.PI*2);
       ctx.fill();
       // pupils
       const [dd]=DIRS[g.dir];
       ctx.fillStyle=pupilColor;
       ctx.beginPath();
-      ctx.arc(px+ox+DIRS[g.dir][0]*2,py-3+DIRS[g.dir][1]*2,2,0,Math.PI*2);
+      ctx.arc(px+ox+DIRS[g.dir][0]*2,py-3+DIRS[g.dir][1]*2,pupilRadius,0,Math.PI*2);
       ctx.fill();
     });
   } else {
@@ -635,16 +693,7 @@ function drawTitle(){
   ctx.fillRect(0,0,canvas.width,canvas.height);
 
   ctx.textAlign='center';
-  // ghost decorations
-  [{x:60,c:'#FF0000'},{x:200,c:'#FFB8FF'},{x:canvas.width-200,c:'#00FFFF'},{x:canvas.width-60,c:'#FFB852'}]
-    .forEach(({x,c})=>{
-      ctx.fillStyle=c; ctx.shadowColor=c; ctx.shadowBlur=12;
-      ctx.beginPath();
-      ctx.arc(x,90,16,Math.PI,0);
-      ctx.lineTo(x+16,110);
-      [3,2,1].forEach((j,k)=>ctx.lineTo(x+16-k*11,j%2===0?110:103));
-      ctx.closePath(); ctx.fill(); ctx.shadowBlur=0;
-    });
+  titleGhosts.forEach(drawGhost);
 
   ctx.font='36px "Press Start 2P"';
   ctx.fillStyle='#FFE000'; ctx.shadowColor='#FFE000'; ctx.shadowBlur=20;
@@ -654,7 +703,8 @@ function drawTitle(){
   ctx.font='9px "Press Start 2P"';
   ctx.fillStyle='#ffb8ae';
   ctx.fillText("© 1980 NAMCO LTD.", canvas.width/2, 190);
-  ctx.fillText("ALL RIGHTS RESERVED", canvas.width/2, 205);
+   ctx.fillText("Remastered by Liran Barniv", canvas.width/2, 205);
+  ctx.fillText("ALL RIGHTS RESERVED", canvas.width/2, 220);
 
   ctx.fillStyle='#00ff41';
   ctx.fillText('ARROWS / WASD = MOVE',canvas.width/2,270);
@@ -671,6 +721,9 @@ function drawTitle(){
 
   ctx.fillStyle='#333'; ctx.font='8px "Press Start 2P"';
   ctx.fillText("1 PLAYER",canvas.width/2,canvas.height-8);
+
+  drawPac(HALF*2);
+  updatePac(true);
 }
 
 function drawGameOver(){
@@ -731,8 +784,14 @@ function loop(){
   ctx.fillStyle='#000';
   ctx.fillRect(0,0,canvas.width,canvas.height);
 
-  if(state==='TITLE'){ drawTitle(); }
-  else if(state==='GAMEOVER'){ drawMaze(); drawHUD(); drawGameOver(); }
+  if(state==='TITLE'){ 
+    drawTitle();
+  } 
+  else if(state==='GAMEOVER'){ 
+    drawMaze();
+    drawHUD();
+    drawGameOver();
+  }
   else {
     drawMaze();
     drawParticles();
