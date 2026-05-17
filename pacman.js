@@ -718,7 +718,7 @@ function drawExitConfirm(){
   ctx.fillStyle='#FFE000';
   if(isMobile){
     ctx.fillText('TAP YES TO EXIT',canvas.width/2,by+64);
-    ctx.fillText('BACK = CANCEL', canvas.width/2,by+82);
+    ctx.fillText('TAP NO TO STAY', canvas.width/2,by+82);
   } else {
     ctx.fillText('[Y] YES       [N] NO',canvas.width/2,by+76);
   }
@@ -825,10 +825,31 @@ function drawParticles(){
 // ── MOBILE SUPPORT ───────────────────────────────────────
 const mobileControls = document.getElementById('mobile-controls');
 const btnPrimary     = document.getElementById('btn-primary');
+const btnSecondary   = document.getElementById('btn-secondary');
 const actionBtns     = document.getElementById('action-btns');
 
+function getDeviceType() {
+  const UA = navigator.userAgent;
+  
+  // 1. Check for specific mobile user agents
+  const isMobileUA = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(UA);
+  if (isMobileUA) return 'mobile';
+
+  // 2. Check for iPad Pro / iOS touch desktops
+  const isMacTouch = navigator.maxTouchPoints > 1 && /Macintosh/.test(UA);
+  if (isMacTouch) return 'mobile';
+
+  // 3. Combine coarse pointer with small screen to exclude touch desktops
+  const isSmallTouch = window.matchMedia('(pointer:coarse)').matches && window.innerWidth < 1024;
+  if (isSmallTouch) return 'mobile';
+
+  return 'desktop';
+}
+
+function isMobileDevice() {return getDeviceType() === 'mobile';}
+
 function resizeCanvas(){
-  isMobile = window.matchMedia('(pointer:coarse)').matches;
+  isMobile = isMobileDevice();
   mobileControls.style.display = isMobile ? 'flex' : 'none';
   // menu mode: 64px button + 14px margin; game mode: 204px dpad + 14px margin
   const isMenuMode = mobileControls.classList.contains('menu-mode');
@@ -850,6 +871,10 @@ const PRIMARY_CFG = {
   EXIT_CONFIRM: ['✓','YES',  true],
 };
 
+const SECONDARY_CFG = {
+  EXIT_CONFIRM: ['❌','No',  true],
+};
+
 let prevMobileState = '';
 function updateMobileButtons(){
   if(state === prevMobileState) return;
@@ -862,11 +887,18 @@ function updateMobileButtons(){
   resizeCanvas(); // always resize on state change so canvas fits before next paint
 
   const [pi='', pl='', pv=false] = PRIMARY_CFG[state] || [];
+  const [si='', sl='', sv=false] = SECONDARY_CFG[state] || [];
+  
   actionBtns.style.display  = pv ? '' : 'none';
   btnPrimary.style.display  = pv ? '' : 'none';
+  btnSecondary.style.display = sv ? '' : 'none';
   if(pv){
     btnPrimary.querySelector('.btn-icon').textContent  = pi;
     btnPrimary.querySelector('.btn-label').textContent = pl;
+  }
+  if(sv){
+    btnSecondary.querySelector('.btn-icon').textContent  = si;
+    btnSecondary.querySelector('.btn-label').textContent = sl;
   }
 }
 
@@ -892,6 +924,12 @@ btnPrimary.addEventListener('touchstart', e => {
   else if(state==='EXIT_CONFIRM') { restartGame(); state='TITLE'; }
   prevMobileState = '';
   updateMobileButtons();
+}, { passive:false });
+
+btnSecondary.addEventListener('touchstart', e => {
+  e.preventDefault();
+  if(AC.state==='suspended') AC.resume();   
+    if(state==='EXIT_CONFIRM'){ state=exitPrevState; prevMobileState=''; updateMobileButtons(); }   
 }, { passive:false });
 
 // Back button (device or browser) → exit confirm; second back → cancel
