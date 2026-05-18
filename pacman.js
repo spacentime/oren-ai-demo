@@ -299,7 +299,7 @@ function makeGhost(i){
     x: GHOST_HOME[i][0], y: GHOST_HOME[i][1],
     dir: 1, color: GHOST_COLORS[i], name: GHOST_NAMES[i],
     mode: i===0?'chase':'house', // blinky starts outside
-    houseTimer: i*120,
+    houseTimer: i*150,
     speed: 0.085,
     eaten: false,
     path: [], pathIdx: 0,
