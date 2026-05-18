@@ -329,6 +329,7 @@ frightenedGhost.y = pac.y;
 let titlePac = new Pac();
 titlePac.x = titleGhosts[0].x;
 titlePac.radius = TILE/1.3;
+for(let i=0;i<5;i++) { pacOpenMouth(titlePac); }
 
 // ── HELPERS ──────────────────────────────────────────────
 function cellAt(x,y){
@@ -391,6 +392,15 @@ function movePacman(pac, dx, dy){
     if(dy!==0) pac.x=Math.round(pac.x);
 }
 
+function pacOpenMouth(pac){
+  
+  // Calculate mouth animation position based on whether we're opening or closing, and switch direction if we hit the limits.
+  const mouthSpeed = 0.1;
+  pac.mouthAngle = pac.mouthOpen ? pac.mouthAngle+mouthSpeed : pac.mouthAngle-mouthSpeed;
+  if(pac.mouthAngle>0.6){ pac.mouthOpen=false; }
+  if(pac.mouthAngle<0.01){ pac.mouthOpen=true; }
+}
+
 function updatePac(pac){
   if(!pac.alive) return;
 
@@ -403,13 +413,7 @@ function updatePac(pac){
   if(pac.isMoving() && pac.canMove(dx,dy)){
     movePacman(pac, dx, dy); 
   }
-
-  // Calculate mouth animation position based on whether we're opening or closing, and switch direction if we hit the limits.
-  const mouthSpeed = 0.1;
-  pac.mouthAngle = pac.mouthOpen ? pac.mouthAngle+mouthSpeed : pac.mouthAngle-mouthSpeed;
-  if(pac.mouthAngle>0.6){ pac.mouthOpen=false; }
-  if(pac.mouthAngle<0.01){ pac.mouthOpen=true; }
-
+  pacOpenMouth(pac);
   eatCell();
 }
 
@@ -570,13 +574,35 @@ function updateGhosts(){
 
 // ── INPUT ────────────────────────────────────────────────
 document.addEventListener('keydown',e=>{
-  if(state==='TITLE' && e.code==='Space'){ state='PLAYING'; resetPositions(); return; }
-  if(state==='GAMEOVER' && e.code==='Space'){ restartGame(); return; }
-  if(e.code==='Space' && (state==='PLAYING'||state==='PAUSED')){ state=state==='PLAYING'?'PAUSED':'PLAYING'; e.preventDefault(); return; }
-  if((e.code==='Escape'||e.code==='Backspace') && (state==='PLAYING'||state==='PAUSED')){ exitPrevState=state; state='EXIT_CONFIRM'; e.preventDefault(); return; }
+  if(e.code==='Space') {
+    if(state==='PLAYING') {
+      state='PAUSED';
+    }
+    else if(state==='PAUSED') { 
+      state='PLAYING';
+    }
+    else if(state==='TITLE' || state==='GAMEOVER') {
+      restartGame();
+    }
+    e.preventDefault(); 
+    return; 
+  }
+  else if (e.code==='Escape'||e.code==='Backspace') {
+    if (state==='PLAYING'||state==='PAUSED') { 
+      exitPrevState=state; state='EXIT_CONFIRM';
+    }
+    else if (state==='EXIT_CONFIRM') {
+      state=exitPrevState;
+    }
+    else if(state==='GAMEOVER') {
+      state='TITLE'; 
+    } 
+    e.preventDefault(); 
+    return; 
+  }
   if(state==='EXIT_CONFIRM'){
     if(e.code==='KeyY'||e.code==='Enter'){ restartGame(); state='TITLE'; }
-    else if(e.code==='KeyN'||e.code==='Escape'||e.code==='Backspace'){ state=exitPrevState; }
+    else if(e.code==='KeyN'){ state=exitPrevState; }
     e.preventDefault(); return;
   }
   if(state!=='PLAYING') return;
@@ -667,7 +693,6 @@ function drawPac(pac){
 }
 
 function drawGhost(g){
-  console.info('Drawing ghost:', g);
   const px=g.x*CS+HALF, py=g.y*CS+HALF+TOP;
   const radius = g.radius || HALF-1;
   const eyeRadiusX = radius / 3;
@@ -862,7 +887,6 @@ function drawTitle(){
   ctx.fillText("1 PLAYER",canvas.width/2,canvas.height-8);
 
   drawPac(titlePac);
-  updatePac(titlePac, false);
   drawGhost(frightenedGhost);
 }
 
@@ -880,7 +904,8 @@ function drawGameOver(){
   titleBlink++;
   if(Math.floor(titleBlink/20)%2===0){
     ctx.fillStyle='#fff';
-    ctx.fillText('PRESS SPACE',canvas.width/2,canvas.height/2+50);
+    ctx.fillText('PRESS SPACE TO RESTART',canvas.width/2,canvas.height/2+50);
+    ctx.fillText('OR ESCAPE TO RETURN TO TITLE',canvas.width/2,canvas.height/2+70);
   }
 }
 
