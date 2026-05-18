@@ -84,10 +84,48 @@ let state='TITLE'; // TITLE PLAYING PAUSED EXIT_CONFIRM DEAD LEVELUP GAMEOVER
 let exitPrevState='PLAYING';
 let isMobile=false;
 let titleBlink=0, deadTimer=0, levelTimer=0;
-let powerTimer=0, ghostEatChain=0, powerSession=0;
 let globalDot=0; // dot animation phase
 let pointBubbles=[];
 let cherry=null, cherrySpawnTimer=600, cherriesLeft=3;
+
+class PowerSession {
+  constructor() {
+    this.powerTimer = 0;
+    this.ghostEatChain = 0;
+    this.powerSessionValue = 0;
+  }
+
+  get isActive() {
+    return this.powerTimer > 0;
+  }
+
+  get isEnding() {
+    return this.isActive && this.powerTimer < 100;
+  }
+
+  start() {
+    this.powerTimer = 400;
+    this.ghostEatChain = 0;
+    this.powerSessionValue++;
+  }
+
+  update() {
+    if (this.powerTimer > 0) {
+      this.powerTimer--;
+      if (this.powerTimer === 0) {
+        this.ghostEatChain = 0;
+      }
+    }
+  }
+
+  reset() {
+    this.powerTimer = 0;
+    this.ghostEatChain = 0;
+    this.powerSessionValue = 0;
+  }
+}
+
+let powerSessionInstance = new PowerSession();
 
 // Pac-Man
 class Pac {
@@ -103,6 +141,7 @@ class Pac {
     this.mouthOpen = true;
     this.speed = 0.1;
     this.alive = true;
+    this.radius = HALF - 1;
   }
 
   // Public getter
@@ -173,16 +212,27 @@ function makeGhost(i){
     radius: HALF-1,
   };
 }
-let ghosts = [0,1,2,3].map(makeGhost);
-let titleGhosts = [0,1,2,3].map((g, i) => { 
-  g = makeGhost(g);
+
+function makeTitleGhost(i){
+  var g = makeGhost(i);
   g.radius = TILE/1.3;
   g.speed = 0;
   g.dir = i;
   g.x = (i*(HALF-3))+HALF/3;
   g.y = 2;
   return g;
-}); 
+}
+
+
+let ghosts = [0,1,2,3].map(makeGhost);
+let titleGhosts = [0,1,2,3].map(makeTitleGhost); 
+let frightenedGhost = makeTitleGhost(0) ;
+frightenedGhost.isFrightened = true;
+frightenedGhost.x = titleGhosts[3].x;
+frightenedGhost.y = pac.y;
+let titlePac = new Pac();
+titlePac.x = titleGhosts[0].x;
+titlePac.radius = TILE/1.3;
 
 // ── HELPERS ──────────────────────────────────────────────
 function cellAt(x,y){
@@ -206,17 +256,27 @@ function canMoveGhost(x,y,dx,dy){
 function resetPositions(){
   pac.resetPosition();
   ghosts=[0,1,2,3].map(makeGhost);
-  powerTimer=0; ghostEatChain=0; pointBubbles=[]; cherry=null; cherrySpawnTimer=600;
+  powerSessionInstance.reset(); pointBubbles=[]; cherry=null; cherrySpawnTimer=600;
 }
 
 function eatCell(){
   const cx=Math.round(pac.x), cy=Math.round(pac.y);
   const c=maze[cy][cx];
-  if(c===CELL_DOT){ maze[cy][cx]=CELL_EATEN; score+=10; dotsEaten++; playEat(); }
-  else if(c===CELL_POWER){ maze[cy][cx]=CELL_EATEN; score+=50; dotsEaten++; powerTimer=400; ghostEatChain=0; powerSession++; playPowerUp(); }
+  const markEatCell = (deltaPoints, soundFx) => {
+    maze[cy][cx]=CELL_EATEN;
+    dotsEaten++;
+    score+=deltaPoints;
+    soundFx();
+  }
+  if(c===CELL_DOT) { 
+    markEatCell(10, playEat); 
+  }
+  else if(c===CELL_POWER){
+    markEatCell(50, playPowerUp);
+    powerSessionInstance.start();
+  }
   if(dotsEaten>=totalDots){ state='LEVELUP'; levelTimer=120; }
 }
-
 
 function movePacman(pac, dx, dy){ 
     pac.x+=dx*pac.speed;
@@ -229,8 +289,8 @@ function movePacman(pac, dx, dy){
     if(dy!==0) pac.x=Math.round(pac.x);
 }
 
-function updatePac(forceDraw=false){
-  if(!(pac.alive || forceDraw)) return;
+function updatePac(pac){
+  if(!pac.alive) return;
 
   // try next direction
   const [ndx,ndy]=DIRS[pac.nextDir];
@@ -238,7 +298,7 @@ function updatePac(forceDraw=false){
 
   const [dx,dy]=DIRS[pac.dir];
 
-  if(!forceDraw && pac.isMoving() && pac.canMove(dx,dy)){
+  if(pac.isMoving() && pac.canMove(dx,dy)){
     movePacman(pac, dx, dy); 
   }
 
@@ -251,7 +311,7 @@ function updatePac(forceDraw=false){
   eatCell();
 }
 
-function isFrightened(g){ return powerTimer>0 && g.immuneSession!==powerSession; }
+function isFrightened(g){ return g.isFrightened || (powerSessionInstance.powerTimer>0 && g.immuneSession!==powerSessionInstance.powerSessionValue); }
 
 function bfsPath(sx, sy, tx, ty){
   const q = [[Math.round(sx), Math.round(sy)]];
@@ -291,7 +351,7 @@ function updateGhosts(){
       }
       if(g.pathIdx >= g.path.length){
         g.eaten=false; g.mode='house'; g.houseTimer=60;
-        g.immuneSession=powerSession; g.path=[]; return;
+        g.immuneSession=powerSessionInstance.powerSessionValue; g.path=[]; return;
       }
       const [wx,wy] = g.path[g.pathIdx];
       const dx=wx-g.x, dy=wy-g.y;
@@ -387,8 +447,8 @@ function updateGhosts(){
     const dist=Math.hypot(g.x-pac.x, g.y-pac.y);
     if(dist<0.75){
       if(isFrightened(g)){
-        const pts=200*Math.pow(2,ghostEatChain);
-        ghostEatChain++;
+        const pts=200*Math.pow(2,powerSessionInstance.ghostEatChain);
+        powerSessionInstance.ghostEatChain++;
         g.eaten=true; g.path=[]; g.pathIdx=0;
         score+=pts;
         pointBubbles.push({x:g.x*CS+HALF, y:g.y*CS+HALF+TOP, pts, life:1, dy:-0.4});
@@ -469,7 +529,7 @@ document.addEventListener('keydown',e=>{
 });
 
 function restartGame(){
-  score=0; lives=3; dotsEaten=0; level=1; powerTimer=0; cherriesLeft=3;
+  score=0; lives=3; dotsEaten=0; level=1; powerSessionInstance.powerTimer=0; cherriesLeft=3;
   maze=RAW.map(r=>r.split('').map(Number));
   totalDots=0;
   maze.forEach(r=>r.forEach(c=>{if(c===CELL_DOT||c===CELL_POWER)totalDots++;}));
@@ -523,7 +583,7 @@ function drawMaze(){
   });
 }
 
-function drawPac(radius=HALF-1){
+function drawPac(pac){
   const px=pac.x*CS+HALF, py=pac.y*CS+HALF+TOP;
   const ma=pac.mouthAngle;
 
@@ -540,7 +600,7 @@ function drawPac(radius=HALF-1){
   ctx.rotate(rot);
   ctx.beginPath();
   ctx.moveTo(0,0);
-  ctx.arc(0,0,radius,ma,Math.PI*2-ma); // draw as a circle with a wedge missing for the mouth
+  ctx.arc(0,0,pac.radius,ma,Math.PI*2-ma); // draw as a circle with a wedge missing for the mouth
   ctx.closePath();
   ctx.fill();
   ctx.restore();
@@ -548,12 +608,53 @@ function drawPac(radius=HALF-1){
 }
 
 function drawGhost(g){
+  console.info('Drawing ghost:', g);
   const px=g.x*CS+HALF, py=g.y*CS+HALF+TOP;
   const radius = g.radius || HALF-1;
   const eyeRadiusX = radius / 3;
   const eyeRadiusY = radius / 2.25;
   const eyeOffsetX = radius / 2.5;
   const pupilRadius = eyeRadiusX * 2 / 3;
+  const eyesXlist = [-eyeOffsetX, eyeOffsetX];
+
+  function drawEyesEaten(edx, edy){
+    eyesXlist.forEach(ox=>{
+      ctx.fillStyle='#ffffff';
+      ctx.beginPath();
+      ctx.ellipse(px+ox, py-3, eyeRadiusX, eyeRadiusY, 0, 0, Math.PI*2); // eaten ghost eyes
+      ctx.fill();
+      ctx.fillStyle='#000099';
+      ctx.beginPath();
+      ctx.arc(px+ox+edx*2, py-3+edy*2, pupilRadius, 0, Math.PI*2);
+      ctx.fill();
+    });
+  }
+
+  function drawEyesNormal(){
+    eyesXlist.forEach(ox=>{
+      ctx.fillStyle=eyeColor;
+      ctx.beginPath();
+      ctx.ellipse(px+ox,py-3,eyeRadiusX,eyeRadiusY,0,0,Math.PI*2);
+      ctx.fill();
+      // pupils
+      const [dd]=DIRS[g.dir];
+      ctx.fillStyle=pupilColor;
+      ctx.beginPath();
+      ctx.arc(px+ox+DIRS[g.dir][0]*2,py-3+DIRS[g.dir][1]*2,pupilRadius,0,Math.PI*2);
+      ctx.fill();
+    });
+  }
+
+  // eyes: two small dots
+  function drawFrightenedEyes(fc) {
+    const eyeRadius = radius / 4.5;
+    ctx.fillStyle = fc;
+    eyesXlist.forEach(ox=>{
+      ctx.beginPath();
+      ctx.arc(px+ox, py-4, eyeRadius, 0, Math.PI*2);
+      ctx.fill();
+    });
+  }
 
   if(g.eaten){
     // derive travel direction from the active path waypoint
@@ -564,21 +665,12 @@ function drawGhost(g){
       const len=Math.hypot(ddx,ddy)||1;
       edx=ddx/len; edy=ddy/len;
     }
-    [-4,4].forEach(ox=>{
-      ctx.fillStyle='#ffffff';
-      ctx.beginPath();
-      ctx.ellipse(px+ox, py-3, eyeRadiusX, eyeRadiusY, 0, 0, Math.PI*2); // eaten ghost eyes
-      ctx.fill();
-      ctx.fillStyle='#000099';
-      ctx.beginPath();
-      ctx.arc(px+ox+edx*2, py-3+edy*2, pupilRadius, 0, Math.PI*2);
-      ctx.fill();
-    });
+    drawEyesEaten(edx,edy);
     return;
   }
 
   const frightened=isFrightened(g);
-  const flashing=frightened&&powerTimer<100&&Math.floor(globalDot/10)%2===0;
+  const flashing=frightened&&powerSessionInstance.isEnding&&Math.floor(globalDot/10)%2===0;
 
   let bodyColor = frightened ? (flashing?'#ffffff':'#2121de') : g.color;
   let eyeColor  = frightened ? '#ffb852' : '#ffffff';
@@ -605,40 +697,26 @@ function drawGhost(g){
 
   if(!frightened){
     // eyes
-    [-eyeOffsetX,eyeOffsetX].forEach(ox=>{
-      ctx.fillStyle=eyeColor;
-      ctx.beginPath();
-      ctx.ellipse(px+ox,py-3,eyeRadiusX,eyeRadiusY,0,0,Math.PI*2);
-      ctx.fill();
-      // pupils
-      const [dd]=DIRS[g.dir];
-      ctx.fillStyle=pupilColor;
-      ctx.beginPath();
-      ctx.arc(px+ox+DIRS[g.dir][0]*2,py-3+DIRS[g.dir][1]*2,pupilRadius,0,Math.PI*2);
-      ctx.fill();
-    });
+    drawEyesNormal();
   } else {
     // frightened face — colour inverts so it stays visible on the flashing white body
     const fc = flashing ? '#2121de' : '#ffffff';
 
-    // eyes: two small dots
-    ctx.fillStyle = fc;
-    [-4,4].forEach(ox=>{
-      ctx.beginPath();
-      ctx.arc(px+ox, py-4, 2, 0, Math.PI*2);
-      ctx.fill();
-    });
-
+    drawFrightenedEyes(fc);
+    
     // mouth: zigzag worried line
+    const mouthWidth = radius / 1.8;
+    const mouthHeight = radius / 3;
     ctx.strokeStyle = fc;
-    ctx.lineWidth = 1.5;
+    ctx.lineWidth = radius/6;
     ctx.lineJoin = 'round';
     ctx.beginPath();
-    ctx.moveTo(px-5, py+3);
-    ctx.lineTo(px-2.5, py);
-    ctx.lineTo(px,    py+3);
-    ctx.lineTo(px+2.5,py);
-    ctx.lineTo(px+5,  py+3);
+    let my =py+radius/4;
+    ctx.moveTo(px-mouthWidth, my+mouthHeight);
+    ctx.lineTo(px-(mouthWidth/2), my);
+    ctx.lineTo(px,    my+mouthHeight);
+    ctx.lineTo(px+(mouthWidth/2),my);
+    ctx.lineTo(px+mouthWidth,  my+mouthHeight);
     ctx.stroke();
   }
 }
@@ -682,11 +760,13 @@ function drawHUD(){
   }
 
   // power timer bar
-  if(powerTimer>0){
+  if(powerSessionInstance.powerTimer>0){
     ctx.fillStyle='#2121de';
-    ctx.fillRect(0,TOP-3,canvas.width*(powerTimer/400),3);
+    ctx.fillRect(0,TOP-3,canvas.width*(powerSessionInstance.powerTimer/400),3);
   }
 }
+
+
 
 function drawTitle(){
   ctx.fillStyle='#000';
@@ -722,8 +802,9 @@ function drawTitle(){
   ctx.fillStyle='#333'; ctx.font='8px "Press Start 2P"';
   ctx.fillText("1 PLAYER",canvas.width/2,canvas.height-8);
 
-  drawPac(HALF*2);
-  updatePac(true);
+  drawPac(titlePac);
+  updatePac(titlePac, false);
+  drawGhost(frightenedGhost);
 }
 
 function drawGameOver(){
@@ -798,7 +879,7 @@ function loop(){
     drawPointBubbles();
     drawCherry();
     ghosts.forEach(drawGhost);
-    if(pac.alive) drawPac();
+    if(pac.alive) drawPac(pac);
     drawHUD();
 
     if(state==='EXIT_CONFIRM'){ drawExitConfirm(); }
@@ -813,8 +894,8 @@ function loop(){
       ctx.fillText('press space to resume',canvas.width/2,canvas.height/2+28);
     }
     if(state==='PLAYING'){
-      if(powerTimer>0){ powerTimer--; if(powerTimer===0) ghostEatChain=0; }
-      updatePac();
+      powerSessionInstance.update();
+      updatePac(pac);
       updateGhosts();
       updateCherry();
     }
