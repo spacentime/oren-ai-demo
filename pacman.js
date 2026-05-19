@@ -86,7 +86,103 @@ let isMobile=false;
 let titleBlink=0, deadTimer=0, levelTimer=0;
 let globalDot=0; // dot animation phase
 let pointBubbles=[];
-let cherry=null, cherrySpawnTimer=600, cherriesLeft=3;
+
+class Cherry {
+  static X = 13;
+  static Y = 16;
+  static VISIBLE = 480;
+  static INTERVAL = 600;
+  static spawnTimer = Cherry.INTERVAL;
+  static cherriesLeft = 3;
+  static active = null;
+  static nextPoints = 0;
+
+  constructor(level) {
+    this.x = Cherry.X;
+    this.y = Cherry.Y;
+    this.timer = Cherry.VISIBLE;
+    this.points = Cherry.nextPoints;
+  }
+
+  static #calculateBasePoints(lvl) {
+    return Math.min(100 * lvl, 1000);
+  }
+
+  static reset() {
+    Cherry.active = null;
+    Cherry.spawnTimer = Cherry.INTERVAL;
+    Cherry.cherriesLeft = 3;
+    Cherry.nextPoints = Cherry.#calculateBasePoints(level);
+  }
+
+  static resetSpawn() {
+    Cherry.active = null;
+    Cherry.spawnTimer = Cherry.INTERVAL;
+  }
+
+  static update() {
+    if (Cherry.active) {
+      Cherry.active.timer--;
+      if (Cherry.active.timer <= 0) {
+        Cherry.active = null;
+        Cherry.spawnTimer = Cherry.INTERVAL;
+        return;
+      }
+      if (Math.hypot(Cherry.active.x - pac.x, Cherry.active.y - pac.y) < 0.75) {
+        score += Cherry.active.points;
+        pointBubbles.push({
+          x: Cherry.active.x * CS + HALF,
+          y: Cherry.active.y * CS + HALF + TOP,
+          pts: Cherry.active.points,
+          life: 1,
+          dy: -0.4
+        });
+        beep(1047, 0.06);
+        setTimeout(() => beep(1319, 0.08), 60);
+        setTimeout(() => beep(1568, 0.1), 120);
+        Cherry.cherriesLeft--;
+        Cherry.active = null;
+        Cherry.nextPoints *= 2;
+        Cherry.spawnTimer = Cherry.INTERVAL;
+      }
+    } else {
+      Cherry.spawnTimer--;
+      if (Cherry.spawnTimer <= 0 && Cherry.cherriesLeft > 0) {
+        Cherry.active = new Cherry(level);
+      }
+    }
+  }
+
+  static draw() {
+    if (!Cherry.active) return;
+    if (Cherry.active.timer < 120 && Math.floor(globalDot / 8) % 2 === 0) return;
+    const px = Cherry.active.x * CS + HALF;
+    const py = Cherry.active.y * CS + HALF + TOP;
+
+    ctx.strokeStyle = '#33cc33';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(px - 2, py + 1);
+    ctx.quadraticCurveTo(px - 5, py - 5, px, py - 7);
+    ctx.moveTo(px + 2, py + 1);
+    ctx.quadraticCurveTo(px + 5, py - 5, px, py - 7);
+    ctx.stroke();
+
+    ctx.shadowColor = '#ff0000';
+    ctx.shadowBlur = 6;
+    [-4, 4].forEach(ox => {
+      ctx.fillStyle = '#cc0000';
+      ctx.beginPath();
+      ctx.arc(px + ox, py + 3, 4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#ff5555';
+      ctx.beginPath();
+      ctx.arc(px + ox - 1, py + 1, 1.5, 0, Math.PI * 2);
+      ctx.fill();
+    });
+    ctx.shadowBlur = 0;
+  }
+}
 
 class PowerSession {
   constructor() {
@@ -203,7 +299,7 @@ function makeGhost(i){
     x: GHOST_HOME[i][0], y: GHOST_HOME[i][1],
     dir: 1, color: GHOST_COLORS[i], name: GHOST_NAMES[i],
     mode: i===0?'chase':'house', // blinky starts outside
-    houseTimer: i*120,
+    houseTimer: i*150,
     speed: 0.085,
     eaten: false,
     path: [], pathIdx: 0,
@@ -233,6 +329,7 @@ frightenedGhost.y = pac.y;
 let titlePac = new Pac();
 titlePac.x = titleGhosts[0].x;
 titlePac.radius = TILE/1.3;
+for(let i=0;i<5;i++) { pacOpenMouth(titlePac); }
 
 // ── HELPERS ──────────────────────────────────────────────
 function cellAt(x,y){
@@ -256,7 +353,13 @@ function canMoveGhost(x,y,dx,dy){
 function resetPositions(){
   pac.resetPosition();
   ghosts=[0,1,2,3].map(makeGhost);
-  powerSessionInstance.reset(); pointBubbles=[]; cherry=null; cherrySpawnTimer=600;
+  powerSessionInstance.reset(); pointBubbles=[]; Cherry.reset();
+}
+
+function resetPositionsAfterDeath(){
+  pac.resetPosition();
+  ghosts=[0,1,2,3].map(makeGhost);
+  powerSessionInstance.reset(); pointBubbles=[]; Cherry.resetSpawn();
 }
 
 function eatCell(){
@@ -289,6 +392,15 @@ function movePacman(pac, dx, dy){
     if(dy!==0) pac.x=Math.round(pac.x);
 }
 
+function pacOpenMouth(pac){
+  
+  // Calculate mouth animation position based on whether we're opening or closing, and switch direction if we hit the limits.
+  const mouthSpeed = 0.1;
+  pac.mouthAngle = pac.mouthOpen ? pac.mouthAngle+mouthSpeed : pac.mouthAngle-mouthSpeed;
+  if(pac.mouthAngle>0.6){ pac.mouthOpen=false; }
+  if(pac.mouthAngle<0.01){ pac.mouthOpen=true; }
+}
+
 function updatePac(pac){
   if(!pac.alive) return;
 
@@ -301,17 +413,11 @@ function updatePac(pac){
   if(pac.isMoving() && pac.canMove(dx,dy)){
     movePacman(pac, dx, dy); 
   }
-
-  // Calculate mouth animation position based on whether we're opening or closing, and switch direction if we hit the limits.
-  const mouthSpeed = 0.1;
-  pac.mouthAngle = pac.mouthOpen ? pac.mouthAngle+mouthSpeed : pac.mouthAngle-mouthSpeed;
-  if(pac.mouthAngle>0.6){ pac.mouthOpen=false; }
-  if(pac.mouthAngle<0.01){ pac.mouthOpen=true; }
-
+  pacOpenMouth(pac);
   eatCell();
 }
 
-function isFrightened(g){ return g.isFrightened || (powerSessionInstance.powerTimer>0 && g.immuneSession!==powerSessionInstance.powerSessionValue); }
+function isFrightened(g){ return g.isFrightened || (powerSessionInstance.isActive && g.immuneSession!==powerSessionInstance.powerSessionValue); }
 
 function bfsPath(sx, sy, tx, ty){
   const q = [[Math.round(sx), Math.round(sy)]];
@@ -465,59 +571,38 @@ function updateGhosts(){
 }
 
 // ── CHERRY ───────────────────────────────────────────────
-const CHERRY_X=13, CHERRY_Y=16;
-const CHERRY_VISIBLE=480, CHERRY_INTERVAL=600;
-
-function updateCherry(){
-  if(cherry){
-    cherry.timer--;
-    if(cherry.timer<=0){ cherry=null; cherrySpawnTimer=CHERRY_INTERVAL; return; }
-    if(Math.hypot(cherry.x-pac.x, cherry.y-pac.y)<0.75){
-      score+=cherry.points;
-      pointBubbles.push({x:cherry.x*CS+HALF, y:cherry.y*CS+HALF+TOP, pts:cherry.points, life:1, dy:-0.4});
-      beep(1047,0.06); setTimeout(()=>beep(1319,0.08),60); setTimeout(()=>beep(1568,0.1),120);
-      cherriesLeft--;
-      cherry=null; cherrySpawnTimer=CHERRY_INTERVAL;
-    }
-  } else {
-    cherrySpawnTimer--;
-    if(cherrySpawnTimer<=0 && cherriesLeft>0)
-      cherry={x:CHERRY_X, y:CHERRY_Y, timer:CHERRY_VISIBLE, points:Math.min(100*level,1000)};
-  }
-}
-
-function drawCherry(){
-  if(!cherry) return;
-  if(cherry.timer<120 && Math.floor(globalDot/8)%2===0) return; // blink before expiry
-  const px=cherry.x*CS+HALF, py=cherry.y*CS+HALF+TOP;
-
-  // stems
-  ctx.strokeStyle='#33cc33'; ctx.lineWidth=1.5;
-  ctx.beginPath();
-  ctx.moveTo(px-2,py+1); ctx.quadraticCurveTo(px-5,py-5,px,py-7);
-  ctx.moveTo(px+2,py+1); ctx.quadraticCurveTo(px+5,py-5,px,py-7);
-  ctx.stroke();
-
-  // berries
-  ctx.shadowColor='#ff0000'; ctx.shadowBlur=6;
-  [-4,4].forEach(ox=>{
-    ctx.fillStyle='#cc0000';
-    ctx.beginPath(); ctx.arc(px+ox,py+3,4,0,Math.PI*2); ctx.fill();
-    ctx.fillStyle='#ff5555';
-    ctx.beginPath(); ctx.arc(px+ox-1,py+1,1.5,0,Math.PI*2); ctx.fill();
-  });
-  ctx.shadowBlur=0;
-}
 
 // ── INPUT ────────────────────────────────────────────────
 document.addEventListener('keydown',e=>{
-  if(state==='TITLE' && e.code==='Space'){ state='PLAYING'; resetPositions(); return; }
-  if(state==='GAMEOVER' && e.code==='Space'){ restartGame(); return; }
-  if(e.code==='Space' && (state==='PLAYING'||state==='PAUSED')){ state=state==='PLAYING'?'PAUSED':'PLAYING'; e.preventDefault(); return; }
-  if((e.code==='Escape'||e.code==='Backspace') && (state==='PLAYING'||state==='PAUSED')){ exitPrevState=state; state='EXIT_CONFIRM'; e.preventDefault(); return; }
+  if(e.code==='Space') {
+    if(state==='PLAYING') {
+      state='PAUSED';
+    }
+    else if(state==='PAUSED') { 
+      state='PLAYING';
+    }
+    else if(state==='TITLE' || state==='GAMEOVER') {
+      restartGame();
+    }
+    e.preventDefault(); 
+    return; 
+  }
+  else if (e.code==='Escape'||e.code==='Backspace') {
+    if (state==='PLAYING'||state==='PAUSED') { 
+      exitPrevState=state; state='EXIT_CONFIRM';
+    }
+    else if (state==='EXIT_CONFIRM') {
+      state=exitPrevState;
+    }
+    else if(state==='GAMEOVER') {
+      state='TITLE'; 
+    } 
+    e.preventDefault(); 
+    return; 
+  }
   if(state==='EXIT_CONFIRM'){
     if(e.code==='KeyY'||e.code==='Enter'){ restartGame(); state='TITLE'; }
-    else if(e.code==='KeyN'||e.code==='Escape'||e.code==='Backspace'){ state=exitPrevState; }
+    else if(e.code==='KeyN'){ state=exitPrevState; }
     e.preventDefault(); return;
   }
   if(state!=='PLAYING') return;
@@ -529,7 +614,7 @@ document.addEventListener('keydown',e=>{
 });
 
 function restartGame(){
-  score=0; lives=3; dotsEaten=0; level=1; powerSessionInstance.powerTimer=0; cherriesLeft=3;
+  score=0; lives=3; dotsEaten=0; level=1; powerSessionInstance.reset(); Cherry.reset();
   maze=RAW.map(r=>r.split('').map(Number));
   totalDots=0;
   maze.forEach(r=>r.forEach(c=>{if(c===CELL_DOT||c===CELL_POWER)totalDots++;}));
@@ -608,7 +693,6 @@ function drawPac(pac){
 }
 
 function drawGhost(g){
-  console.info('Drawing ghost:', g);
   const px=g.x*CS+HALF, py=g.y*CS+HALF+TOP;
   const radius = g.radius || HALF-1;
   const eyeRadiusX = radius / 3;
@@ -750,7 +834,7 @@ function drawHUD(){
   // cherry counter (bottom-right)
   for(let i=0;i<3;i++){
     const bx=canvas.width-10-(2-i)*16, by=canvas.height-10;
-    const available=i<cherriesLeft;
+    const available=i<Cherry.cherriesLeft;
     ctx.fillStyle=available?'#cc0000':'#333';
     ctx.beginPath(); ctx.arc(bx,by,5,0,Math.PI*2); ctx.fill();
     if(available){
@@ -803,7 +887,6 @@ function drawTitle(){
   ctx.fillText("1 PLAYER",canvas.width/2,canvas.height-8);
 
   drawPac(titlePac);
-  updatePac(titlePac, false);
   drawGhost(frightenedGhost);
 }
 
@@ -821,7 +904,8 @@ function drawGameOver(){
   titleBlink++;
   if(Math.floor(titleBlink/20)%2===0){
     ctx.fillStyle='#fff';
-    ctx.fillText('PRESS SPACE',canvas.width/2,canvas.height/2+50);
+    ctx.fillText('PRESS SPACE TO RESTART',canvas.width/2,canvas.height/2+50);
+    ctx.fillText('OR ESCAPE TO RETURN TO TITLE',canvas.width/2,canvas.height/2+70);
   }
 }
 
@@ -877,7 +961,7 @@ function loop(){
     drawMaze();
     drawParticles();
     drawPointBubbles();
-    drawCherry();
+    Cherry.draw();
     ghosts.forEach(drawGhost);
     if(pac.alive) drawPac(pac);
     drawHUD();
@@ -897,7 +981,7 @@ function loop(){
       powerSessionInstance.update();
       updatePac(pac);
       updateGhosts();
-      updateCherry();
+      Cherry.update();
     }
     else if(state==='DEAD'){
       deadTimer--;
@@ -911,7 +995,7 @@ function loop(){
       ctx.closePath(); ctx.fill();
       if(deadTimer<=0){
         if(lives<=0){ state='GAMEOVER'; titleBlink=0; }
-        else { resetPositions(); state='PLAYING'; }
+        else { resetPositionsAfterDeath(); state='PLAYING'; }
       }
     }
     else if(state==='LEVELUP'){
@@ -920,7 +1004,7 @@ function loop(){
       if(levelTimer<=0){
         level++;
         lives++;  // Gain a life every level up!
-        dotsEaten=0; cherriesLeft=3;
+        dotsEaten=0; Cherry.cherriesLeft=3;
         maze=RAW.map(r=>r.split('').map(Number));
         resetPositions();
         state='PLAYING';
