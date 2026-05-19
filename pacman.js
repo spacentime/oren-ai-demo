@@ -228,16 +228,29 @@ class Pac {
   // Private field
   #dir = 4;
 
-  constructor() {
+  constructor(props = {}) {
     // Public properties
-    this.x = 13.5;
-    this.y = 21;
-    this.nextDir = 0;
-    this.mouthAngle = 0;
-    this.mouthOpen = true;
-    this.speed = 0.1;
-    this.alive = true;
-    this.radius = HALF - 1;
+    const defaultProps = {
+      x: 13.5,
+      y: 21,
+      nextDir: 0,
+      mouthAngle: 0,
+      mouthOpen: true,
+      speed: 0.1,
+      alive: true,
+      radius: HALF - 1
+    };
+
+    props = { ...defaultProps, ...props };
+
+    this.x = props.x;
+    this.y = props.y;
+    this.nextDir = props.nextDir;
+    this.mouthAngle = props.mouthAngle;
+    this.mouthOpen = props.mouthOpen;
+    this.speed = props.speed;
+    this.alive = props.alive;
+    this.radius =  props.radius;
   }
 
   // Public getter
@@ -276,10 +289,73 @@ class Pac {
 
   // Used for direction switching: Math.floor on negative axes prevents prematurely switching
   // direction when pressing into a wall, so Pacman keeps going in its current direction.
-  canTurn(dx,dy){
+  #canTurn(){
+    const [dx,dy]=DIRS[this.nextDir];
     const cx=dx<0 ? Math.floor(this.x+dx*0.5) : Math.round(this.x+dx*0.5);
     const cy=dy<0 ? Math.floor(this.y+dy*0.5) : Math.round(this.y+dy*0.5);
     return this.#cellOpen(cx,cy);
+  }
+
+  tryTurn(){
+    if(this.nextDir!==4 && this.#canTurn()) {
+      this.changeDirection(this.nextDir);
+    }  
+    return this;
+  }
+
+  moveBy(){ 
+    const [dx,dy]=DIRS[this.dir];
+    if (!(this.isMoving() && this.canMove(dx,dy))) return this;
+    this.x+=dx*this.speed;
+    this.y+=dy*this.speed;
+    // tunnel wrap
+    if(this.x<0) this.x=COLS-0.5;
+    if(this.x>=COLS) this.x=0;
+    // snap to grid
+    if(dx!==0) this.y=Math.round(this.y);
+    if(dy!==0) this.x=Math.round(this.x); 
+    return this;
+  }
+
+  openMouth(){
+    // Calculate mouth animation position based on whether we're opening or closing, and switch direction if we hit the limits.
+    const mouthSpeed = 0.1;
+    this.mouthAngle = this.mouthOpen ? this.mouthAngle+mouthSpeed : this.mouthAngle-mouthSpeed;
+    if(this.mouthAngle>0.6){ this.mouthOpen=false; }
+    if(this.mouthAngle<0.01){ this.mouthOpen=true; }
+    return this;
+  }
+
+  update(){
+    if(!this.alive) return;
+    this.tryTurn()
+        .moveBy() 
+        .openMouth()
+        .eatCell();
+  }
+
+  eatCell(){
+    const cx=Math.round(this.x), cy=Math.round(this.y);
+    const c=maze[cy][cx];
+    const markEatCell = (deltaPoints, soundFx) => {
+      maze[cy][cx]=CELL_EATEN;
+      dotsEaten++;
+      score+=deltaPoints;
+      soundFx();
+    }
+    if(c===CELL_DOT) { 
+      markEatCell(10, playEat); 
+    }
+    else if(c===CELL_POWER){
+      markEatCell(50, playPowerUp);
+      powerSessionInstance.start();
+    }
+    if(dotsEaten>=totalDots){ state='LEVELUP'; levelTimer=120; }
+    return this;
+  }
+
+  static createTitlePac(x) {
+    return new Pac({radius: TILE / 1.3, x: x, mouthAngle: 0.6}); 
   }
 }
 
@@ -294,42 +370,179 @@ const GHOST_COLORS = ['#FF0000','#FFB8FF','#00FFFF','#FFB852'];
 const GHOST_NAMES  = ['BLINKY','PINKY','INKY','CLYDE'];
 const GHOST_HOME   = [[13,10],[13,13],[12,13],[14,13]];
  
-function makeGhost(i){
-  return {
-    x: GHOST_HOME[i][0], y: GHOST_HOME[i][1],
-    dir: 1, color: GHOST_COLORS[i], name: GHOST_NAMES[i],
-    mode: i===0?'chase':'house', // blinky starts outside
-    houseTimer: i*150,
-    speed: 0.085,
-    eaten: false,
-    path: [], pathIdx: 0,
-    cellX: -1, cellY: -1,
-    immuneSession: -1,
-    radius: HALF-1,
-  };
+class Ghost {
+  constructor(i) {
+    this.index = i;
+    this.x = GHOST_HOME[i][0];
+    this.y = GHOST_HOME[i][1];
+    this.dir = 1;
+    this.color = GHOST_COLORS[i];
+    this.name = GHOST_NAMES[i];
+    this.mode = i === 0 ? 'chase' : 'house';
+    this.houseTimer = i * 150;
+    this.speed = 0.085;
+    this.eaten = false;
+    this.path = [];
+    this.pathIdx = 0;
+    this.cellX = -1;
+    this.cellY = -1;
+    this.immuneSession = -1;
+    this.radius = HALF - 1;
+    this.forceFrightened = false;
+  }
+
+  isFrightened() {
+    return this.forceFrightened || (powerSessionInstance.isActive && this.immuneSession !== powerSessionInstance.powerSessionValue);
+  }
+
+  update(sp) {
+    if (this.eaten) return this._updateEaten();
+    if (this.mode === 'house') return this._updateHouse();
+    if (this.mode === 'exit') return this._updateExit(sp);
+    this._updateChase(sp);
+  }
+
+  _updateEaten() {
+    if (!this.path.length) {
+      this.path = bfsPath(this.x, this.y, GHOST_HOME[0][0], 12);
+      this.pathIdx = 0;
+    }
+    if (this.pathIdx >= this.path.length) {
+      this.eaten = false;
+      this.mode = 'house';
+      this.houseTimer = 60;
+      this.immuneSession = powerSessionInstance.powerSessionValue;
+      this.path = [];
+      return;
+    }
+
+    const [wx, wy] = this.path[this.pathIdx];
+    const dx = wx - this.x;
+    const dy = wy - this.y;
+
+    if (Math.abs(dx) + Math.abs(dy) < 0.12) {
+      this.x = wx;
+      this.y = wy;
+      this.pathIdx++;
+    } else {
+      const spd = 0.18;
+      this.x += Math.sign(dx) * Math.min(Math.abs(dx), spd);
+      this.y += Math.sign(dy) * Math.min(Math.abs(dy), spd);
+    }
+  }
+
+  _updateHouse() {
+    this.houseTimer--;
+    this.y += Math.sin(globalDot * 0.1) * 0.03;
+    if (this.houseTimer <= 0) this.mode = 'exit';
+  }
+
+  _updateExit(sp) {
+    const tx = 13, ty = 10;
+    const dxe = tx - this.x;
+    const dye = ty - this.y;
+
+    if (Math.abs(dxe) + Math.abs(dye) < 0.3) {
+      this.mode = 'chase';
+      this.dir = 1;
+      this.cellX = -1;
+      this.cellY = -1;
+    }
+
+    this.x += Math.sign(dxe) * this.speed * sp;
+    this.y += Math.sign(dye) * this.speed * sp;
+  }
+
+  _updateChase(sp) {
+    const frightened = this.isFrightened();
+    const gsp = frightened ? this.speed * 0.6 * sp : this.speed * sp;
+    const snapX = Math.round(this.x);
+    const snapY = Math.round(this.y);
+    const atCenter = Math.abs(this.x - snapX) < gsp + 0.06 &&
+                     Math.abs(this.y - snapY) < gsp + 0.06 &&
+                     (snapX !== this.cellX || snapY !== this.cellY);
+
+    if (atCenter) {
+      this.cellX = snapX;
+      this.cellY = snapY;
+      this.x = snapX;
+      this.y = snapY;
+
+      let tx = pac.x;
+      let ty = pac.y;
+      if (frightened) {
+        tx = pac.x + (this.x - pac.x) * 3;
+        ty = pac.y + (this.y - pac.y) * 3;
+      } else if (this.index === 1) {
+        tx = pac.x + DIRS[pac.dir][0] * 4;
+        ty = pac.y + DIRS[pac.dir][1] * 4;
+      } else if (this.index === 2) {
+        tx = COLS / 2;
+        ty = ROWS / 2;
+      }
+
+      const possible = [0,1,2,3].filter(d => {
+        const rev = (this.dir + 2) % 4;
+        if (d === rev && !frightened) return false;
+        const [ddx, ddy] = DIRS[d];
+        return canMoveGhost(this.x, this.y, ddx, ddy);
+      });
+
+      if (possible.length > 0) {
+        if (frightened) {
+          this.dir = possible[Math.floor(Math.random() * possible.length)];
+        } else {
+          let minDist = Infinity;
+          possible.forEach(d => {
+            const [ddx, ddy] = DIRS[d];
+            const dist = (this.x + ddx - tx) ** 2 + (this.y + ddy - ty) ** 2;
+            if (dist < minDist) {
+              minDist = dist;
+              this.dir = d;
+            }
+          });
+        }
+      }
+    }
+
+    const [gdx, gdy] = DIRS[this.dir];
+    const ahead = { x: Math.round(this.x + gdx * 0.6), y: Math.round(this.y + gdy * 0.6) };
+    let bx = ahead.x;
+    if (bx < 0) bx = COLS - 1;
+    if (bx >= COLS) bx = 0;
+    const blocked = ahead.y >= 0 && ahead.y < ROWS && maze[ahead.y][bx] === CELL_WALL;
+
+    if (!blocked) {
+      this.x += gdx * gsp;
+      this.y += gdy * gsp;
+      if (this.x < 0) this.x = COLS - 1;
+      if (this.x >= COLS) this.x = 0;
+    }
+  }
+
+  static makeTitleGhost(i) {
+    const g = new Ghost(i);
+    g.radius = TILE / 1.3;
+    g.speed = 0;
+    g.dir = i;
+    g.x = (i * (HALF - 3)) + HALF / 3;
+    g.y = 2;
+    return g;
+  }
+
+  static makeTitleFrightenedGhost (x, y) {
+    let g = Ghost.makeTitleGhost(0) ;
+    g.forceFrightened = true;
+    g.x = x;
+    g.y = y;
+    return g;
+  }
 }
 
-function makeTitleGhost(i){
-  var g = makeGhost(i);
-  g.radius = TILE/1.3;
-  g.speed = 0;
-  g.dir = i;
-  g.x = (i*(HALF-3))+HALF/3;
-  g.y = 2;
-  return g;
-}
-
-
-let ghosts = [0,1,2,3].map(makeGhost);
-let titleGhosts = [0,1,2,3].map(makeTitleGhost); 
-let frightenedGhost = makeTitleGhost(0) ;
-frightenedGhost.isFrightened = true;
-frightenedGhost.x = titleGhosts[3].x;
-frightenedGhost.y = pac.y;
-let titlePac = new Pac();
-titlePac.x = titleGhosts[0].x;
-titlePac.radius = TILE/1.3;
-for(let i=0;i<5;i++) { pacOpenMouth(titlePac); }
+let ghosts = [0,1,2,3].map(i => new Ghost(i));
+let titleGhosts = [0,1,2,3].map(i => Ghost.makeTitleGhost(i)); 
+let frightenedGhost = Ghost.makeTitleFrightenedGhost(titleGhosts[3].x, pac.y);
+let titlePac = Pac.createTitlePac(titleGhosts[0].x);
 
 // ── HELPERS ──────────────────────────────────────────────
 function cellAt(x,y){
@@ -352,72 +565,17 @@ function canMoveGhost(x,y,dx,dy){
 // ── UPDATE ───────────────────────────────────────────────
 function resetPositions(){
   pac.resetPosition();
-  ghosts=[0,1,2,3].map(makeGhost);
+  ghosts=[0,1,2,3].map(i => new Ghost(i));
   powerSessionInstance.reset(); pointBubbles=[]; Cherry.reset();
 }
 
 function resetPositionsAfterDeath(){
   pac.resetPosition();
-  ghosts=[0,1,2,3].map(makeGhost);
+  ghosts=[0,1,2,3].map(i => new Ghost(i));
   powerSessionInstance.reset(); pointBubbles=[]; Cherry.resetSpawn();
 }
 
-function eatCell(){
-  const cx=Math.round(pac.x), cy=Math.round(pac.y);
-  const c=maze[cy][cx];
-  const markEatCell = (deltaPoints, soundFx) => {
-    maze[cy][cx]=CELL_EATEN;
-    dotsEaten++;
-    score+=deltaPoints;
-    soundFx();
-  }
-  if(c===CELL_DOT) { 
-    markEatCell(10, playEat); 
-  }
-  else if(c===CELL_POWER){
-    markEatCell(50, playPowerUp);
-    powerSessionInstance.start();
-  }
-  if(dotsEaten>=totalDots){ state='LEVELUP'; levelTimer=120; }
-}
-
-function movePacman(pac, dx, dy){ 
-    pac.x+=dx*pac.speed;
-    pac.y+=dy*pac.speed;
-    // tunnel wrap
-    if(pac.x<0) pac.x=COLS-0.5;
-    if(pac.x>=COLS) pac.x=0;
-    // snap to grid
-    if(dx!==0) pac.y=Math.round(pac.y);
-    if(dy!==0) pac.x=Math.round(pac.x);
-}
-
-function pacOpenMouth(pac){
-  
-  // Calculate mouth animation position based on whether we're opening or closing, and switch direction if we hit the limits.
-  const mouthSpeed = 0.1;
-  pac.mouthAngle = pac.mouthOpen ? pac.mouthAngle+mouthSpeed : pac.mouthAngle-mouthSpeed;
-  if(pac.mouthAngle>0.6){ pac.mouthOpen=false; }
-  if(pac.mouthAngle<0.01){ pac.mouthOpen=true; }
-}
-
-function updatePac(pac){
-  if(!pac.alive) return;
-
-  // try next direction
-  const [ndx,ndy]=DIRS[pac.nextDir];
-  if(pac.nextDir!==4 && (pac.canTurn(ndx,ndy))) pac.changeDirection(pac.nextDir);
-
-  const [dx,dy]=DIRS[pac.dir];
-
-  if(pac.isMoving() && pac.canMove(dx,dy)){
-    movePacman(pac, dx, dy); 
-  }
-  pacOpenMouth(pac);
-  eatCell();
-}
-
-function isFrightened(g){ return g.isFrightened || (powerSessionInstance.isActive && g.immuneSession!==powerSessionInstance.powerSessionValue); }
+function isFrightened(g){ return g.isFrightened(); }
 
 function bfsPath(sx, sy, tx, ty){
   const q = [[Math.round(sx), Math.round(sy)]];
@@ -449,103 +607,7 @@ function bfsPath(sx, sy, tx, ty){
 
 function updateGhosts(){
   const sp = level===1?1:1+level*0.05;
-  ghosts.forEach((g,i)=>{
-    if(g.eaten){
-      if(!g.path.length){
-        g.path = bfsPath(g.x, g.y, GHOST_HOME[0][0], 12);
-        g.pathIdx = 0;
-      }
-      if(g.pathIdx >= g.path.length){
-        g.eaten=false; g.mode='house'; g.houseTimer=60;
-        g.immuneSession=powerSessionInstance.powerSessionValue; g.path=[]; return;
-      }
-      const [wx,wy] = g.path[g.pathIdx];
-      const dx=wx-g.x, dy=wy-g.y;
-      if(Math.abs(dx)+Math.abs(dy)<0.12){
-        g.x=wx; g.y=wy; g.pathIdx++;
-      } else {
-        const spd=0.18;
-        g.x+=Math.sign(dx)*Math.min(Math.abs(dx),spd);
-        g.y+=Math.sign(dy)*Math.min(Math.abs(dy),spd);
-      }
-      return;
-    }
-
-    if(g.mode==='house'){
-      g.houseTimer--;
-      // bob up and down in house
-      g.y += Math.sin(globalDot*0.1)*0.03;
-      if(g.houseTimer<=0){ g.mode='exit'; }
-      return;
-    }
-
-    if(g.mode==='exit'){
-      // move toward exit (13, 10) — corridor above cage
-      const tx=13, ty=10;
-      const dxe=tx-g.x, dye=ty-g.y;
-      if(Math.abs(dxe)+Math.abs(dye)<0.3){ g.mode='chase'; g.dir=1; g.cellX=-1; g.cellY=-1; }
-      g.x+=Math.sign(dxe)*g.speed*sp;
-      g.y+=Math.sign(dye)*g.speed*sp;
-      return;
-    }
-
-    // chase / frightened
-    const frightened = isFrightened(g);
-    const gsp = frightened ? g.speed*0.6*sp : g.speed*sp;
-
-    // At a grid intersection — snap and choose new direction (only once per cell)
-    const snapX = Math.round(g.x), snapY = Math.round(g.y);
-    const atCenter = Math.abs(g.x - snapX) < gsp+0.06 &&
-                     Math.abs(g.y - snapY) < gsp+0.06 &&
-                     (snapX !== g.cellX || snapY !== g.cellY);
-
-    if(atCenter){
-      g.cellX = snapX; g.cellY = snapY;
-      g.x = snapX;
-      g.y = snapY;
-
-      let tx=pac.x, ty=pac.y;
-      if(frightened){
-        tx = pac.x + (g.x-pac.x)*3;
-        ty = pac.y + (g.y-pac.y)*3;
-      } else if(i===1){ tx=pac.x+DIRS[pac.dir][0]*4; ty=pac.y+DIRS[pac.dir][1]*4; }
-      else if(i===2){ tx=COLS/2; ty=ROWS/2; }
-
-      const possible=[0,1,2,3].filter(d=>{
-        const rev=(g.dir+2)%4;
-        if(d===rev && !frightened) return false;
-        const [ddx,ddy]=DIRS[d];
-        return canMoveGhost(g.x,g.y,ddx,ddy);
-      });
-
-      if(possible.length>0){
-        let best;
-        if(frightened){
-          best=possible[Math.floor(Math.random()*possible.length)];
-        } else {
-          let minDist=Infinity;
-          possible.forEach(d=>{
-            const [ddx,ddy]=DIRS[d];
-            const dist=(g.x+ddx-tx)**2+(g.y+ddy-ty)**2;
-            if(dist<minDist){ minDist=dist; best=d; }
-          });
-        }
-        g.dir=best;
-      }
-    }
-
-    // Only move if not blocked by a wall
-    const [gdx,gdy]=DIRS[g.dir];
-    const ahead = { x: Math.round(g.x+gdx*0.6), y: Math.round(g.y+gdy*0.6) };
-    let bx=ahead.x; if(bx<0)bx=COLS-1; if(bx>=COLS)bx=0;
-    const blocked = ahead.y>=0 && ahead.y<ROWS && maze[ahead.y][bx]===CELL_WALL;
-
-    if(!blocked){
-      g.x+=gdx*gsp; g.y+=gdy*gsp;
-      if(g.x<0) g.x=COLS-1;
-      if(g.x>=COLS) g.x=0;
-    }
-  });
+  ghosts.forEach(g => g.update(sp));
 
   // collision with pac
   ghosts.forEach(g=>{
@@ -753,7 +815,7 @@ function drawGhost(g){
     return;
   }
 
-  const frightened=isFrightened(g);
+  const frightened = g.isFrightened();
   const flashing=frightened&&powerSessionInstance.isEnding&&Math.floor(globalDot/10)%2===0;
 
   let bodyColor = frightened ? (flashing?'#ffffff':'#2121de') : g.color;
@@ -979,7 +1041,7 @@ function loop(){
     }
     if(state==='PLAYING'){
       powerSessionInstance.update();
-      updatePac(pac);
+      pac.update();
       updateGhosts();
       Cherry.update();
     }
