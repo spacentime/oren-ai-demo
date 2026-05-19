@@ -1,63 +1,27 @@
+import {
+  directions,
+  DIRS,
+  CELL_DOT,
+  CELL_WALL,
+  CELL_POWER,
+  CELL_CAGE_WALL,
+  CELL_DOOR,
+  CELL_EATEN,
+  CELL_CAGE_INTERIOR,
+  RAW,
+  ROWS,
+  COLS,
+  CS,
+  TOP,
+  TILE,
+  HALF,
+} from './constants.js';
+import Game from './Game.js';
+
 const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
 
-// Colors and constants
-// dir indices: 0=R 1=U 2=L 3=D 4=stop
-const directions = { 
-    RIGHT: 0,
-    UP: 1,
-    LEFT: 2,
-    DOWN: 3,
-    NONE: 4,
-  }
-
-// ── MAZE ────────────────────────────────────────────────
-const CELL_DOT       = 0;
-const CELL_WALL      = 1;
-const CELL_POWER     = 2;
-const CELL_CAGE_WALL = 3;
-const CELL_DOOR          = 4;
-const CELL_EATEN         = 5;
-const CELL_CAGE_INTERIOR = 6;
-
-const RAW = [
- "1111111111111111111111111111",
- "1000000000000110000000000001",
- "1011110111110110111110111101",
- "1211110111110110111110111121",
- "1011110111110110111110111101",
- "1000000000000000000000000001",
- "1011110110111111110110111101",
- "1011110110111111110110111101",
- "1000000110000110000110000001",
- "1111110111110110111110111111",
- "1111110110000000000110111111",
- "1111110110333443330110111111",
- "1111110110366666630110111111",
- "0000000000366666630000000000",
- "1111110110366666630110111111",
- "1111110110333333330110111111",
- "1111110110000000000110111111",
- "1111110110111111110110111111",
- "1000000000000110000000000001",
- "1011110111110110111110111101",
- "1011110111110110111110111101",
- "1200110000000000000000110021",
- "1110110110111111110110110111",
- "1110110110111111110110110111",
- "1000000110000110000110000001",
- "1011111111110110111111111101",
- "1011111111110110111111111101",
- "1000000000000000000000000001",
- "1111111111111111111111111111",
-];
-
-const ROWS = RAW.length;
-const COLS = RAW[0].length;
-const CS = 20; // cell size
-const TOP = 40; // score bar height
-
-canvas.width  = COLS * CS;
+canvas.width = COLS * CS;
 canvas.height = ROWS * CS + TOP + 20;
 
 // Parse maze
@@ -85,620 +49,26 @@ function playDeath(){
 }
 function playPowerUp(){ beep(660,0.08); setTimeout(()=>beep(880,0.12),80); }
 
-// ── STATE ────────────────────────────────────────────────
-const TILE = CS;
-const HALF = TILE/2;
-
-let score=0, lives=3, dotsEaten=0, level=1;
-let state='TITLE'; // TITLE PLAYING PAUSED EXIT_CONFIRM DEAD LEVELUP GAMEOVER
-let exitPrevState='PLAYING';
-let isMobile=false;
-let titleBlink=0, deadTimer=0, levelTimer=0;
-let globalDot=0; // dot animation phase
-let pointBubbles=[];
-
-class Cherry {
-  static X = 13;
-  static Y = 16;
-  static VISIBLE = 480;
-  static INTERVAL = 600;
-  static spawnTimer = Cherry.INTERVAL;
-  static cherriesLeft = 3;
-  static active = null;
-  static nextPoints = 0;
-
-  constructor(level) {
-    this.x = Cherry.X;
-    this.y = Cherry.Y;
-    this.timer = Cherry.VISIBLE;
-    this.points = Cherry.nextPoints;
-  }
-
-  static #calculateBasePoints(lvl) {
-    return Math.min(100 * lvl, 1000);
-  }
-
-  static reset() {
-    Cherry.active = null;
-    Cherry.spawnTimer = Cherry.INTERVAL;
-    Cherry.cherriesLeft = 3;
-    Cherry.nextPoints = Cherry.#calculateBasePoints(level);
-  }
-
-  static resetSpawn() {
-    Cherry.active = null;
-    Cherry.spawnTimer = Cherry.INTERVAL;
-  }
-
-  static update() {
-    if (Cherry.active) {
-      Cherry.active.timer--;
-      if (Cherry.active.timer <= 0) {
-        Cherry.active = null;
-        Cherry.spawnTimer = Cherry.INTERVAL;
-        return;
-      }
-      if (Math.hypot(Cherry.active.x - pac.x, Cherry.active.y - pac.y) < 0.75) {
-        score += Cherry.active.points;
-        pointBubbles.push({
-          x: Cherry.active.x * CS + HALF,
-          y: Cherry.active.y * CS + HALF + TOP,
-          pts: Cherry.active.points,
-          life: 1,
-          dy: -0.4
-        });
-        beep(1047, 0.06);
-        setTimeout(() => beep(1319, 0.08), 60);
-        setTimeout(() => beep(1568, 0.1), 120);
-        Cherry.cherriesLeft--;
-        Cherry.active = null;
-        Cherry.nextPoints *= 2;
-        Cherry.spawnTimer = Cherry.INTERVAL;
-      }
-    } else {
-      Cherry.spawnTimer--;
-      if (Cherry.spawnTimer <= 0 && Cherry.cherriesLeft > 0) {
-        Cherry.active = new Cherry(level);
-      }
-    }
-  }
-
-  static draw() {
-    if (!Cherry.active) return;
-    if (Cherry.active.timer < 120 && Math.floor(globalDot / 8) % 2 === 0) return;
-    const px = Cherry.active.x * CS + HALF;
-    const py = Cherry.active.y * CS + HALF + TOP;
-
-    ctx.strokeStyle = '#33cc33';
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.moveTo(px - 2, py + 1);
-    ctx.quadraticCurveTo(px - 5, py - 5, px, py - 7);
-    ctx.moveTo(px + 2, py + 1);
-    ctx.quadraticCurveTo(px + 5, py - 5, px, py - 7);
-    ctx.stroke();
-
-    ctx.shadowColor = '#ff0000';
-    ctx.shadowBlur = 6;
-    [-4, 4].forEach(ox => {
-      ctx.fillStyle = '#cc0000';
-      ctx.beginPath();
-      ctx.arc(px + ox, py + 3, 4, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = '#ff5555';
-      ctx.beginPath();
-      ctx.arc(px + ox - 1, py + 1, 1.5, 0, Math.PI * 2);
-      ctx.fill();
-    });
-    ctx.shadowBlur = 0;
-  }
-}
-
-class PowerSession {
-  constructor() {
-    this.powerTimer = 0;
-    this.ghostEatChain = 0;
-    this.powerSessionValue = 0;
-  }
-
-  get isActive() {
-    return this.powerTimer > 0;
-  }
-
-  get isEnding() {
-    return this.isActive && this.powerTimer < 100;
-  }
-
-  start() {
-    this.powerTimer = 400;
-    this.ghostEatChain = 0;
-    this.powerSessionValue++;
-  }
-
-  update() {
-    if (this.powerTimer > 0) {
-      this.powerTimer--;
-      if (this.powerTimer === 0) {
-        this.ghostEatChain = 0;
-      }
-    }
-  }
-
-  reset() {
-    this.powerTimer = 0;
-    this.ghostEatChain = 0;
-    this.powerSessionValue = 0;
-  }
-}
-
-let powerSessionInstance = new PowerSession();
-
-// Pac-Man
-class Pac {
-  // Private field
-  #dir = 4;
-
-  constructor(props = {}) {
-    const defaultProps = {
-      x: 13.5,
-      y: 21,
-      nextDir: directions.UP,
-      mouthAngle: 0,
-      mouthOpen: true,
-      speed: 0.1,
-      alive: true,
-      radius: HALF - 1
-    };
-
-    Object.assign(this, { ...defaultProps, ...props });
-  }
-
-  // Public getter
-  get dir() {
-    return this.#dir;
-  }
-
-  resetPosition() {
-    this.x=13.5; this.y=21; 
-    this.changeDirection(directions.NONE); this.nextDir=directions.NONE; 
-    this.alive=true;
-  }
-  // No setter → dir cannot be changed directly
-
-  // Public method to safely change direction
-  changeDirection(newDir) {
-    if (newDir < 0 || newDir > 4) {
-      throw new Error("dir must be between 0 and 4");
-    }
-    this.#dir = newDir;
-  }
-
-  isMoving() {
-    return this.#dir !== 4;
-  }
-
-  #cellOpen(cx,cy){
-    if(cy<0||cy>=ROWS) return false;
-    if(cx<0||cx>=COLS) return true;
-    const c=maze[cy][cx];
-    return c!==CELL_WALL && c!==CELL_CAGE_WALL && c!==CELL_DOOR && c!==CELL_CAGE_INTERIOR;
-  }
-
-  // Used for movement: Math.round gives symmetric stopping distance in all directions.
-  canMove(dx,dy){
-    return this.#cellOpen(Math.round(this.x+dx*0.5), Math.round(this.y+dy*0.5));
-  }
-
-  // Used for direction switching: Math.floor on negative axes prevents prematurely switching
-  // direction when pressing into a wall, so Pacman keeps going in its current direction.
-  #canTurn(){
-    const [dx,dy]=DIRS[this.nextDir];
-    const cx=dx<0 ? Math.floor(this.x+dx*0.5) : Math.round(this.x+dx*0.5);
-    const cy=dy<0 ? Math.floor(this.y+dy*0.5) : Math.round(this.y+dy*0.5);
-    return this.#cellOpen(cx,cy);
-  }
-
-  tryTurn(){
-    if(this.nextDir!==directions.NONE && this.#canTurn()) {
-      this.changeDirection(this.nextDir);
-    }  
-    return this;
-  }
-
-  moveBy(){ 
-    const [dx,dy]=DIRS[this.dir];
-    if (!(this.isMoving() && this.canMove(dx,dy))) return this;
-    this.x+=dx*this.speed;
-    this.y+=dy*this.speed;
-    // tunnel wrap
-    if(this.x<0) this.x=COLS-0.5;
-    if(this.x>=COLS) this.x=0;
-    // snap to grid
-    if(dx!==0) this.y=Math.round(this.y);
-    if(dy!==0) this.x=Math.round(this.x); 
-    return this;
-  }
-
-  openMouth(){
-    // Calculate mouth animation position based on whether we're opening or closing, and switch direction if we hit the limits.
-    const mouthSpeed = 0.1;
-    this.mouthAngle = this.mouthOpen ? this.mouthAngle+mouthSpeed : this.mouthAngle-mouthSpeed;
-    if(this.mouthAngle>0.6){ this.mouthOpen=false; }
-    if(this.mouthAngle<0.01){ this.mouthOpen=true; }
-    return this;
-  }
-
-  update(){
-    if(!this.alive) return;
-    this.tryTurn()
-        .moveBy() 
-        .openMouth()
-        .eatCell();
-  }
-
-  eatCell(){
-    const cx=Math.round(this.x), cy=Math.round(this.y);
-    const c=maze[cy][cx];
-    const markEatCell = (deltaPoints, soundFx) => {
-      maze[cy][cx]=CELL_EATEN;
-      dotsEaten++;
-      score+=deltaPoints;
-      soundFx();
-    }
-    if(c===CELL_DOT) { 
-      markEatCell(10, playEat); 
-    }
-    else if(c===CELL_POWER){
-      markEatCell(50, playPowerUp);
-      powerSessionInstance.start();
-    }
-    if(dotsEaten>=totalDots){ state='LEVELUP'; levelTimer=120; }
-    return this;
-  }
-
-  static createTitlePac(x) {
-    return new Pac({radius: TILE / 1.3, x: x, mouthAngle: 0.6}); 
-  }
-}
-
-let pac = new Pac();
-
-// direction vectors [dx,dy]
-const DIRS = [[1,0],[0,-1],[-1,0],[0,1],[0,0]];
-// dir indices: 0=R 1=U 2=L 3=D 4=stop
-
-// Ghosts
-const GHOST_COLORS = ['#FF0000','#FFB8FF','#00FFFF','#FFB852'];
-const GHOST_NAMES  = ['BLINKY','PINKY','INKY','CLYDE'];
-const GHOST_HOME   = [[13,10],[13,13],[12,13],[14,13]];
- 
-class Ghost {
-  
-  constructor(props = {}) {
-    const defaultProps = {
-      index: props.index || 0,
-      dir: directions.UP,
-      speed: 0.085,
-      eaten: false,
-      path: [],
-      pathIdx: 0,
-      cellX: -1,
-      cellY: -1,
-      immuneSession: -1,
-      radius: HALF - 1,
-      forceFrightened: false
-    };
-
-    Object.assign(this, { ...defaultProps, ...this.#getPropsByIndex(defaultProps.index), ...props });
-  }
-
-  #getPropsByIndex(i) {
-    return {
-      x: GHOST_HOME[i][0],
-      y: GHOST_HOME[i][1],
-      color: GHOST_COLORS[i],
-      name: GHOST_NAMES[i],
-      mode: i === 0 ? 'chase' : 'house',
-      houseTimer: i * 150,
-    }
-  }
-
-  isFrightened() {
-    return this.forceFrightened || (powerSessionInstance.isActive && this.immuneSession !== powerSessionInstance.powerSessionValue);
-  }
-
-  update(sp) {
-    if (this.eaten) return this._updateEaten();
-    if (this.mode === 'house') return this._updateHouse();
-    if (this.mode === 'exit') return this._updateExit(sp);
-    this._updateChase(sp);
-  }
-
-  _updateEaten() {
-    if (!this.path.length) {
-      this.path = bfsPath(this.x, this.y, GHOST_HOME[0][0], 12);
-      this.pathIdx = 0;
-    }
-    if (this.pathIdx >= this.path.length) {
-      this.eaten = false;
-      this.mode = 'house';
-      this.houseTimer = 60;
-      this.immuneSession = powerSessionInstance.powerSessionValue;
-      this.path = [];
-      return;
-    }
-
-    const [wx, wy] = this.path[this.pathIdx];
-    const dx = wx - this.x;
-    const dy = wy - this.y;
-
-    if (Math.abs(dx) + Math.abs(dy) < 0.12) {
-      this.x = wx;
-      this.y = wy;
-      this.pathIdx++;
-    } else {
-      const spd = 0.18;
-      this.x += Math.sign(dx) * Math.min(Math.abs(dx), spd);
-      this.y += Math.sign(dy) * Math.min(Math.abs(dy), spd);
-    }
-  }
-
-  _updateHouse() {
-    this.houseTimer--;
-    this.y += Math.sin(globalDot * 0.1) * 0.03;
-    if (this.houseTimer <= 0) this.mode = 'exit';
-  }
-
-  _updateExit(sp) {
-    const tx = 13, ty = 10;
-    const dxe = tx - this.x;
-    const dye = ty - this.y;
-
-    if (Math.abs(dxe) + Math.abs(dye) < 0.3) {
-      this.mode = 'chase';
-      this.dir = directions.UP;
-      this.cellX = -1;
-      this.cellY = -1;
-    }
-
-    this.x += Math.sign(dxe) * this.speed * sp;
-    this.y += Math.sign(dye) * this.speed * sp;
-  }
-
-  _updateChase(sp) {
-    const frightened = this.isFrightened();
-    const gsp = frightened ? this.speed * 0.6 * sp : this.speed * sp;
-    const snapX = Math.round(this.x);
-    const snapY = Math.round(this.y);
-    const atCenter = Math.abs(this.x - snapX) < gsp + 0.06 &&
-                     Math.abs(this.y - snapY) < gsp + 0.06 &&
-                     (snapX !== this.cellX || snapY !== this.cellY);
-
-    if (atCenter) {
-      this.cellX = snapX;
-      this.cellY = snapY;
-      this.x = snapX;
-      this.y = snapY;
-
-      let tx = pac.x;
-      let ty = pac.y;
-      if (frightened) {
-        tx = pac.x + (this.x - pac.x) * 3;
-        ty = pac.y + (this.y - pac.y) * 3;
-      } else if (this.index === 1) {
-        tx = pac.x + DIRS[pac.dir][0] * 4;
-        ty = pac.y + DIRS[pac.dir][1] * 4;
-      } else if (this.index === 2) {
-        tx = COLS / 2;
-        ty = ROWS / 2;
-      }
-
-      const possible = [0,1,2,3].filter(d => {
-        const rev = (this.dir + 2) % 4;
-        if (d === rev && !frightened) return false;
-        const [ddx, ddy] = DIRS[d];
-        return canMoveGhost(this.x, this.y, ddx, ddy);
-      });
-
-      if (possible.length > 0) {
-        if (frightened) {
-          this.dir = possible[Math.floor(Math.random() * possible.length)];
-        } else {
-          let minDist = Infinity;
-          possible.forEach(d => {
-            const [ddx, ddy] = DIRS[d];
-            const dist = (this.x + ddx - tx) ** 2 + (this.y + ddy - ty) ** 2;
-            if (dist < minDist) {
-              minDist = dist;
-              this.dir = d;
-            }
-          });
-        }
-      }
-    }
-
-    const [gdx, gdy] = DIRS[this.dir];
-    const ahead = { x: Math.round(this.x + gdx * 0.6), y: Math.round(this.y + gdy * 0.6) };
-    let bx = ahead.x;
-    if (bx < 0) bx = COLS - 1;
-    if (bx >= COLS) bx = 0;
-    const blocked = ahead.y >= 0 && ahead.y < ROWS && maze[ahead.y][bx] === CELL_WALL;
-
-    if (!blocked) {
-      this.x += gdx * gsp;
-      this.y += gdy * gsp;
-      if (this.x < 0) this.x = COLS - 1;
-      if (this.x >= COLS) this.x = 0;
-    }
-  }
-
-  static makeTitleGhost(i) {
-    const g = new Ghost(i);
-    g.radius = TILE / 1.3;
-    g.speed = 0;
-    g.dir = i;
-    g.x = (i * (HALF - 3)) + HALF / 3;
-    g.y = 2;
-    return g;
-  }
-
-  static makeTitleFrightenedGhost (x, y) {
-    let g = Ghost.makeTitleGhost(0) ;
-    g.forceFrightened = true;
-    g.x = x;
-    g.y = y;
-    return g;
-  }
-}
-
-let ghosts = [0,1,2,3].map(i => new Ghost(i));
-let titleGhosts = [0,1,2,3].map(i => Ghost.makeTitleGhost(i)); 
-let frightenedGhost = Ghost.makeTitleFrightenedGhost(titleGhosts[3].x, pac.y);
-let titlePac = Pac.createTitlePac(titleGhosts[0].x);
-
-// ── HELPERS ──────────────────────────────────────────────
-function cellAt(x,y){
-  const cx=Math.round(x), cy=Math.round(y);
-  if(cy<0||cy>=ROWS||cx<0||cx>=COLS) return 1;
-  return maze[cy][cx];
-}
-
-function canMoveGhost(x,y,dx,dy){
-  // Check from exact grid position one full cell ahead
-  const nx=x+dx, ny=y+dy;
-  let cx=Math.round(nx), cy=Math.round(ny);
-  if(cy<0||cy>=ROWS) return false;
-  if(cx<0) cx=COLS-1;
-  if(cx>=COLS) cx=0;
-  const c=maze[cy][cx];
-  return c!==CELL_WALL && c!==CELL_CAGE_WALL && c!==CELL_DOOR && c!==CELL_CAGE_INTERIOR;
-}
+// ── GAME INSTANCE ────────────────────────────────────────
+const game = new Game({
+  playEat,
+  playDeath,
+  playPowerUp,
+  beep,
+});
 
 // ── UPDATE ───────────────────────────────────────────────
-function resetPositions(){
-  pac.resetPosition();
-  ghosts=[0,1,2,3].map(i => new Ghost(i));
-  powerSessionInstance.reset(); pointBubbles=[]; Cherry.reset();
-}
-
-function resetPositionsAfterDeath(){
-  pac.resetPosition();
-  ghosts=[0,1,2,3].map(i => new Ghost(i));
-  powerSessionInstance.reset(); pointBubbles=[]; Cherry.resetSpawn();
-}
-
-function isFrightened(g){ return g.isFrightened(); }
-
-function bfsPath(sx, sy, tx, ty){
-  const q = [[Math.round(sx), Math.round(sy)]];
-  const visited = {};
-  const prev = {};
-  const key = (x,y) => x+','+y;
-  visited[key(q[0][0], q[0][1])] = true;
-  while(q.length){
-    const [cx,cy] = q.shift();
-    if(cx===tx && cy===ty){
-      const path=[];
-      let cur=key(tx,ty);
-      while(prev[cur]){ path.unshift(prev[cur]); cur=key(...prev[cur]); }
-      path.push([tx,ty]);
-      return path;
-    }
-    for(const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1]]){
-      let nx=cx+dx, ny=cy+dy;
-      if(nx<0) nx=COLS-1; if(nx>=COLS) nx=0;
-      if(ny<0||ny>=ROWS) continue;
-      const c=maze[ny][nx];
-      if(c===CELL_WALL || c===CELL_CAGE_WALL) continue;
-      const k=key(nx,ny);
-      if(!visited[k]){ visited[k]=true; prev[k]=[cx,cy]; q.push([nx,ny]); }
-    }
-  }
-  return [[tx,ty]];
-}
-
-function updateGhosts(){
-  const sp = level===1?1:1+level*0.05;
-  ghosts.forEach(g => g.update(sp));
-
-  // collision with pac
-  ghosts.forEach(g=>{
-    if(g.eaten) return;
-    const dist=Math.hypot(g.x-pac.x, g.y-pac.y);
-    if(dist<0.75){
-      if(isFrightened(g)){
-        const pts=200*Math.pow(2,powerSessionInstance.ghostEatChain);
-        powerSessionInstance.ghostEatChain++;
-        g.eaten=true; g.path=[]; g.pathIdx=0;
-        score+=pts;
-        pointBubbles.push({x:g.x*CS+HALF, y:g.y*CS+HALF+TOP, pts, life:1, dy:-0.4});
-        beep(880,0.05); beep(1100,0.08);
-      } else {
-        pac.alive=false;
-        lives--;
-        state='DEAD';
-        deadTimer=180;
-        playDeath();
-      }
-    }
-  });
-}
-
-// ── CHERRY ───────────────────────────────────────────────
+// (All update logic is now in Game class)
 
 // ── INPUT ────────────────────────────────────────────────
 document.addEventListener('keydown',e=>{
-  if(e.code==='Space'||e.code==='Enter') {
-    if(state==='PLAYING') {
-      state='PAUSED';
-    }
-    else if(state==='PAUSED') { 
-      state='PLAYING';
-    }
-    else if(state==='TITLE' || state==='GAMEOVER') {
-      restartGame();
-    }
-    else if(state==='EXIT_CONFIRM'){ 
-      state='TITLE';
-    } 
-  }
-  else if (e.code==='Escape'||e.code==='Backspace') {
-    if (state==='PLAYING'||state==='PAUSED') { 
-      exitPrevState=state; state='EXIT_CONFIRM';
-    }
-    else if (state==='EXIT_CONFIRM') {
-      state=exitPrevState;
-    }
-    else if(state==='GAMEOVER') {
-      state='TITLE'; 
-    } 
-  }
-  else if(e.code==='KeyN') {
-    if (state==='EXIT_CONFIRM') {
-        state=exitPrevState;
-    }
-  }
-  if(state==='PLAYING') {
-    if(e.code==='ArrowRight'||e.code==='KeyD') pac.nextDir=directions.RIGHT;
-    if(e.code==='ArrowUp'   ||e.code==='KeyW') pac.nextDir=directions.UP;
-    if(e.code==='ArrowLeft' ||e.code==='KeyA') pac.nextDir=directions.LEFT;
-    if(e.code==='ArrowDown' ||e.code==='KeyS') pac.nextDir=directions.DOWN;
-  }
+  game.handleKeyDown(e.code);
   e.preventDefault();
 });
 
-function restartGame(){
-  score=0; lives=3; dotsEaten=0; level=1; powerSessionInstance.reset(); Cherry.reset();
-  maze=RAW.map(r=>r.split('').map(Number));
-  totalDots=0;
-  maze.forEach(r=>r.forEach(c=>{if(c===CELL_DOT||c===CELL_POWER)totalDots++;}));
-  resetPositions();
-  state='PLAYING';
-}
-
 // ── DRAW ─────────────────────────────────────────────────
 function drawMaze(){
-  maze.forEach((row,ry)=>{
+  game.maze.forEach((row,ry)=>{
     row.forEach((cell,cx)=>{
       const px=cx*CS, py=ry*CS+TOP;
       if(cell===CELL_WALL){
@@ -717,7 +87,7 @@ function drawMaze(){
         ctx.fill();
       } else if(cell===CELL_POWER){
         // power pellet - blinking
-        if(Math.floor(globalDot/15)%2===0){
+        if(Math.floor(game.globalDot/15)%2===0){
           ctx.fillStyle='#ffb8ae';
           ctx.shadowColor='#ffb8ae';
           ctx.shadowBlur=8;
@@ -742,9 +112,9 @@ function drawMaze(){
   });
 }
 
-function drawPac(pac){
-  const px=pac.x*CS+HALF, py=pac.y*CS+HALF+TOP;
-  const ma=pac.mouthAngle;
+function drawPac(pacCharacter){
+  const px=pacCharacter.x*CS+HALF, py=pacCharacter.y*CS+HALF+TOP;
+  const ma=pacCharacter.mouthAngle;
 
   ctx.shadowColor='#ffff00';
   ctx.shadowBlur=10;
@@ -752,14 +122,14 @@ function drawPac(pac){
 
   // rotation based on dir
   const angles=[[0],[Math.PI*1.5],[Math.PI],[Math.PI*0.5]];
-  const rot = pac.isMoving() ? angles[pac.dir][0] : 0;
+  const rot = pacCharacter.isMoving() ? angles[pacCharacter.dir][0] : 0;
 
   ctx.save();
   ctx.translate(px,py);
   ctx.rotate(rot);
   ctx.beginPath();
   ctx.moveTo(0,0);
-  ctx.arc(0,0,pac.radius,ma,Math.PI*2-ma); // draw as a circle with a wedge missing for the mouth
+  ctx.arc(0,0,pacCharacter.radius,ma,Math.PI*2-ma); // draw as a circle with a wedge missing for the mouth
   ctx.closePath();
   ctx.fill();
   ctx.restore();
@@ -827,8 +197,8 @@ function drawGhost(g){
     return;
   }
 
-  const frightened = g.isFrightened();
-  const flashing=frightened&&powerSessionInstance.isEnding&&Math.floor(globalDot/10)%2===0;
+  const frightened = g.isFrightened(game.powerSession);
+  const flashing=frightened&&game.powerSession.isEnding&&Math.floor(game.globalDot/10)%2===0;
 
   let bodyColor = frightened ? (flashing?'#ffffff':'#2121de') : g.color;
   let eyeColor  = frightened ? '#ffb852' : '#ffffff';
@@ -889,14 +259,14 @@ function drawHUD(){
   ctx.font='10px "Press Start 2P"';
   ctx.fillText('SCORE',8,16);
   ctx.fillStyle='#FFE000';
-  ctx.fillText(String(score).padStart(6,'0'),8,30);
+  ctx.fillText(String(game.score).padStart(6,'0'),8,30);
 
   ctx.fillStyle='#ffffff';
-  ctx.fillText('LV '+level,canvas.width/2-20,22);
+  ctx.fillText('LV '+game.level,canvas.width/2-20,22);
 
   // lives
-  for(let i=0;i<lives;i++){
-    const lx=canvas.width-20-(lives-1-i)*18, ly=TOP-8;
+  for(let i=0;i<game.lives;i++){
+    const lx=canvas.width-20-(game.lives-1-i)*18, ly=TOP-8;
     ctx.fillStyle='#FFE000';
     ctx.beginPath();
     ctx.moveTo(lx,ly);
@@ -908,7 +278,7 @@ function drawHUD(){
   // cherry counter (bottom-right)
   for(let i=0;i<3;i++){
     const bx=canvas.width-10-(2-i)*16, by=canvas.height-10;
-    const available=i<Cherry.cherriesLeft;
+    const available=i<game.cherry.cherriesLeft;
     ctx.fillStyle=available?'#cc0000':'#333';
     ctx.beginPath(); ctx.arc(bx,by,5,0,Math.PI*2); ctx.fill();
     if(available){
@@ -918,9 +288,9 @@ function drawHUD(){
   }
 
   // power timer bar
-  if(powerSessionInstance.powerTimer>0){
+  if(game.powerSession.powerTimer>0){
     ctx.fillStyle='#2121de';
-    ctx.fillRect(0,TOP-3,canvas.width*(powerSessionInstance.powerTimer/400),3);
+    ctx.fillRect(0,TOP-3,canvas.width*(game.powerSession.powerTimer/400),3);
   }
 }
 
@@ -931,7 +301,7 @@ function drawTitle(){
   ctx.fillRect(0,0,canvas.width,canvas.height);
 
   ctx.textAlign='center';
-  titleGhosts.forEach(drawGhost);
+  game.titleGhosts.forEach(drawGhost);
 
   ctx.font='36px "Press Start 2P"';
   ctx.fillStyle='#FFE000'; ctx.shadowColor='#FFE000'; ctx.shadowBlur=20;
@@ -949,19 +319,19 @@ function drawTitle(){
   ctx.fillText('EAT ALL DOTS TO WIN',canvas.width/2,290);
   ctx.fillText('POWER PELLETS = EAT GHOSTS',canvas.width/2,310);
 
-  titleBlink++;
-  if(Math.floor(titleBlink/20)%2===0){
+  game.incrementTitleBlink();
+  if(Math.floor(game.titleBlink/20)%2===0){
     ctx.fillStyle='#FFE000'; ctx.shadowColor='#FFE000'; ctx.shadowBlur=10;
     ctx.font='12px "Press Start 2P"';
-    ctx.fillText(isMobile?'TAP PLAY TO START':'PRESS SPACE TO START',canvas.width/2,380);
+    ctx.fillText(game.isMobile?'TAP PLAY TO START':'PRESS SPACE TO START',canvas.width/2,380);
     ctx.shadowBlur=0;
   }
 
   ctx.fillStyle='#333'; ctx.font='8px "Press Start 2P"';
   ctx.fillText("1 PLAYER",canvas.width/2,canvas.height-8);
 
-  drawPac(titlePac);
-  drawGhost(frightenedGhost);
+  drawPac(game.titlePac);
+  drawGhost(game.frightenedGhost);
 }
 
 function drawGameOver(){
@@ -974,9 +344,9 @@ function drawGameOver(){
   ctx.shadowBlur=0;
   ctx.font='10px "Press Start 2P"';
   ctx.fillStyle='#FFE000';
-  ctx.fillText('SCORE: '+score,canvas.width/2,canvas.height/2+20);
-  titleBlink++;
-  if(Math.floor(titleBlink/20)%2===0){
+  ctx.fillText('SCORE: '+game.score,canvas.width/2,canvas.height/2+20);
+  game.incrementTitleBlink();
+  if(Math.floor(game.titleBlink/20)%2===0){
     ctx.fillStyle='#fff';
     ctx.fillText('PRESS SPACE TO RESTART',canvas.width/2,canvas.height/2+50);
     ctx.fillText('OR ESCAPE TO RETURN TO TITLE',canvas.width/2,canvas.height/2+70);
@@ -989,7 +359,7 @@ function drawLevelUp(){
   ctx.textAlign='center';
   ctx.font='16px "Press Start 2P"';
   ctx.fillStyle='#00FFFF'; ctx.shadowColor='#00FFFF'; ctx.shadowBlur=15;
-  ctx.fillText('LEVEL '+level+' CLEAR!',canvas.width/2,canvas.height/2);
+  ctx.fillText('LEVEL '+game.level+' CLEAR!',canvas.width/2,canvas.height/2);
   ctx.shadowBlur=0;
 }
 
@@ -1008,7 +378,7 @@ function drawExitConfirm(){
   ctx.fillText('EXIT TO MENU?',canvas.width/2,by+36);
   ctx.font='9px "Press Start 2P"';
   ctx.fillStyle='#FFE000';
-  if(isMobile){
+  if(game.isMobile){
     ctx.fillText('TAP YES TO EXIT',canvas.width/2,by+64);
     ctx.fillText('TAP NO TO STAY', canvas.width/2,by+82);
   } else {
@@ -1019,14 +389,14 @@ function drawExitConfirm(){
 // ── MAIN LOOP ─────────────────────────────────────────────
 function loop(){
   updateMobileButtons();
-  globalDot++;
+  game.incrementGlobalDot();
   ctx.fillStyle='#000';
   ctx.fillRect(0,0,canvas.width,canvas.height);
 
-  if(state==='TITLE'){ 
+  if(game.state==='TITLE'){
     drawTitle();
   } 
-  else if(state==='GAMEOVER'){ 
+  else if(game.state==='GAMEOVER'){
     drawMaze();
     drawHUD();
     drawGameOver();
@@ -1034,14 +404,14 @@ function loop(){
   else {
     drawMaze();
     drawParticles();
-    drawPointBubbles();
-    Cherry.draw();
-    ghosts.forEach(drawGhost);
-    if(pac.alive) drawPac(pac);
+    drawPointBubbles(game.pointBubbles);
+    game.cherry.draw(ctx, game.globalDot);
+    game.ghosts.forEach(drawGhost);
+    if(game.pac.alive) drawPac(game.pac);
     drawHUD();
 
-    if(state==='EXIT_CONFIRM'){ drawExitConfirm(); }
-    if(state==='PAUSED'){
+    if(game.state==='EXIT_CONFIRM'){ drawExitConfirm(); }
+    if(game.state==='PAUSED'){
       ctx.fillStyle='rgba(0,0,0,0.45)';
       ctx.fillRect(0,0,canvas.width,canvas.height);
       ctx.fillStyle='#FFE000';
@@ -1051,45 +421,29 @@ function loop(){
       ctx.font='14px monospace';
       ctx.fillText('press space to resume',canvas.width/2,canvas.height/2+28);
     }
-    if(state==='PLAYING'){
-      powerSessionInstance.update();
-      pac.update();
-      updateGhosts();
-      Cherry.update();
+    if(game.state==='PLAYING'){
+      game.updateGameplay();
+      game.updateCherryCollection();
     }
-    else if(state==='DEAD'){
-      deadTimer--;
-      // death animation
-      const t=1-(deadTimer/180);
-      const px=pac.x*CS+HALF, py=pac.y*CS+HALF+TOP;
+    else if(game.state==='DEAD'){
+      const t=1-(game.deadTimer/180);
+      const px=game.pac.x*CS+HALF, py=game.pac.y*CS+HALF+TOP;
       ctx.fillStyle='#FFE000';
       ctx.beginPath();
       ctx.moveTo(px,py);
       ctx.arc(px,py,HALF-1, t*Math.PI, (2-t)*Math.PI);
       ctx.closePath(); ctx.fill();
-      if(deadTimer<=0){
-        if(lives<=0){ state='GAMEOVER'; titleBlink=0; }
-        else { resetPositionsAfterDeath(); state='PLAYING'; }
-      }
+      game.updateDeadState();
     }
-    else if(state==='LEVELUP'){
-      levelTimer--;
+    else if(game.state==='LEVELUP'){
       drawLevelUp();
-      if(levelTimer<=0){
-        level++;
-        lives++;  // Gain a life every level up!
-        dotsEaten=0; Cherry.cherriesLeft=3;
-        maze=RAW.map(r=>r.split('').map(Number));
-        resetPositions();
-        state='PLAYING';
-        beep(523,0.1); beep(659,0.1); beep(784,0.15);
-      }
+      game.updateLevelUp();
     }
   }
   requestAnimationFrame(loop);
 }
 
-function drawPointBubbles(){
+function drawPointBubbles(pointBubbles){
   ctx.font='9px "Press Start 2P"';
   ctx.textAlign='center';
   for(let i=pointBubbles.length-1;i>=0;i--){
@@ -1147,7 +501,8 @@ function getDeviceType() {
 function isMobileDevice() {return getDeviceType() === 'mobile';}
 
 function resizeCanvas(){
-  isMobile = isMobileDevice();
+  const isMobile = isMobileDevice();
+  game.updateMobileState(isMobile);
   mobileControls.style.display = isMobile ? 'flex' : 'none';
   // menu mode: 64px button + 14px margin; game mode: 204px dpad + 14px margin
   const isMenuMode = mobileControls.classList.contains('menu-mode');
@@ -1175,17 +530,17 @@ const SECONDARY_CFG = {
 
 let prevMobileState = '';
 function updateMobileButtons(){
-  if(state === prevMobileState) return;
-  prevMobileState = state;
+  if(game.state === prevMobileState) return;
+  prevMobileState = game.state;
 
   // menu-mode: wide horizontal button, no D-pad
-  const isMenu = state==='TITLE' || state==='GAMEOVER' || state==='EXIT_CONFIRM';
+  const isMenu = game.state==='TITLE' || game.state==='GAMEOVER' || game.state==='EXIT_CONFIRM';
   mobileControls.classList.toggle('menu-mode',  isMenu);
   mobileControls.classList.toggle('game-mode', !isMenu);
   resizeCanvas(); // always resize on state change so canvas fits before next paint
 
-  const [pi='', pl='', pv=false] = PRIMARY_CFG[state] || [];
-  const [si='', sl='', sv=false] = SECONDARY_CFG[state] || [];
+  const [pi='', pl='', pv=false] = PRIMARY_CFG[game.state] || [];
+  const [si='', sl='', sv=false] = SECONDARY_CFG[game.state] || [];
   
   actionBtns.style.display  = pv ? '' : 'none';
   btnPrimary.style.display  = pv ? '' : 'none';
@@ -1206,10 +561,9 @@ document.querySelectorAll('#dpad [data-dir]').forEach(btn => {
   btn.addEventListener('touchstart', e => {
     e.preventDefault();
     if(AC.state==='suspended') AC.resume();
-    if(state==='TITLE'){ state='PLAYING'; resetPositions(); prevMobileState=''; updateMobileButtons(); return; }
-    if(state==='GAMEOVER'){ restartGame(); prevMobileState=''; updateMobileButtons(); return; }
-    if(state==='EXIT_CONFIRM'){ state=exitPrevState; prevMobileState=''; updateMobileButtons(); return; }
-    if(state==='PLAYING'||state==='PAUSED'){ state='PLAYING'; pac.nextDir=dir; }
+    game.handleDpadDirection(dir);
+    prevMobileState = '';
+    updateMobileButtons();
   }, { passive:false });
 });
 
@@ -1217,9 +571,7 @@ document.querySelectorAll('#dpad [data-dir]').forEach(btn => {
 btnPrimary.addEventListener('touchstart', e => {
   e.preventDefault();
   if(AC.state==='suspended') AC.resume();
-  if(state==='TITLE')             { state='PLAYING'; resetPositions(); }
-  else if(state==='GAMEOVER')     { restartGame(); }
-  else if(state==='EXIT_CONFIRM') { restartGame(); state='TITLE'; }
+  game.handleKeyDown('Enter');
   prevMobileState = '';
   updateMobileButtons();
 }, { passive:false });
@@ -1227,18 +579,16 @@ btnPrimary.addEventListener('touchstart', e => {
 btnSecondary.addEventListener('touchstart', e => {
   e.preventDefault();
   if(AC.state==='suspended') AC.resume();   
-    if(state==='EXIT_CONFIRM'){ state=exitPrevState; prevMobileState=''; updateMobileButtons(); }   
+    game.handleKeyDown('KeyN');
+    prevMobileState = '';
+    updateMobileButtons();
 }, { passive:false });
 
 // Back button (device or browser) → exit confirm; second back → cancel
 history.pushState({pacman:true}, '');
 window.addEventListener('popstate', ()=>{
   if(AC.state==='suspended') AC.resume();
-  if(state==='PLAYING'||state==='PAUSED'){
-    exitPrevState=state; state='EXIT_CONFIRM';
-    history.pushState({pacman:true}, '');
-  } else if(state==='EXIT_CONFIRM'){
-    state=exitPrevState;
+  if(game.handleBackButton()){
     history.pushState({pacman:true}, '');
   }
 });
