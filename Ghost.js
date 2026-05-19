@@ -64,7 +64,7 @@ export default class Ghost {
     if (this.pathIdx >= this.path.length) {
       this.eaten = false;
       this.mode = 'house';
-      this.houseTimer = 60;
+      this.houseTimer = 30 + this.index * 30; // stagger return-to-play by 10s per ghost
       this.immuneSession = powerSession.powerSessionValue;
       this.path = [];
       return;
