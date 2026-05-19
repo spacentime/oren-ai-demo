@@ -1,6 +1,16 @@
 const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
 
+// Colors and constants
+// dir indices: 0=R 1=U 2=L 3=D 4=stop
+const directions = { 
+    RIGHT: 0,
+    UP: 1,
+    LEFT: 2,
+    DOWN: 3,
+    NONE: 4,
+  }
+
 // ── MAZE ────────────────────────────────────────────────
 const CELL_DOT       = 0;
 const CELL_WALL      = 1;
@@ -229,11 +239,10 @@ class Pac {
   #dir = 4;
 
   constructor(props = {}) {
-    // Public properties
     const defaultProps = {
       x: 13.5,
       y: 21,
-      nextDir: 0,
+      nextDir: directions.UP,
       mouthAngle: 0,
       mouthOpen: true,
       speed: 0.1,
@@ -241,16 +250,7 @@ class Pac {
       radius: HALF - 1
     };
 
-    props = { ...defaultProps, ...props };
-
-    this.x = props.x;
-    this.y = props.y;
-    this.nextDir = props.nextDir;
-    this.mouthAngle = props.mouthAngle;
-    this.mouthOpen = props.mouthOpen;
-    this.speed = props.speed;
-    this.alive = props.alive;
-    this.radius =  props.radius;
+    Object.assign(this, { ...defaultProps, ...props });
   }
 
   // Public getter
@@ -259,7 +259,9 @@ class Pac {
   }
 
   resetPosition() {
-    this.x=13.5; this.y=21; this.changeDirection(4); this.nextDir=4; this.alive=true;
+    this.x=13.5; this.y=21; 
+    this.changeDirection(directions.NONE); this.nextDir=directions.NONE; 
+    this.alive=true;
   }
   // No setter → dir cannot be changed directly
 
@@ -297,7 +299,7 @@ class Pac {
   }
 
   tryTurn(){
-    if(this.nextDir!==4 && this.#canTurn()) {
+    if(this.nextDir!==directions.NONE && this.#canTurn()) {
       this.changeDirection(this.nextDir);
     }  
     return this;
@@ -371,24 +373,34 @@ const GHOST_NAMES  = ['BLINKY','PINKY','INKY','CLYDE'];
 const GHOST_HOME   = [[13,10],[13,13],[12,13],[14,13]];
  
 class Ghost {
-  constructor(i) {
-    this.index = i;
-    this.x = GHOST_HOME[i][0];
-    this.y = GHOST_HOME[i][1];
-    this.dir = 1;
-    this.color = GHOST_COLORS[i];
-    this.name = GHOST_NAMES[i];
-    this.mode = i === 0 ? 'chase' : 'house';
-    this.houseTimer = i * 150;
-    this.speed = 0.085;
-    this.eaten = false;
-    this.path = [];
-    this.pathIdx = 0;
-    this.cellX = -1;
-    this.cellY = -1;
-    this.immuneSession = -1;
-    this.radius = HALF - 1;
-    this.forceFrightened = false;
+  
+  constructor(props = {}) {
+    const defaultProps = {
+      index: props.index || 0,
+      dir: directions.UP,
+      speed: 0.085,
+      eaten: false,
+      path: [],
+      pathIdx: 0,
+      cellX: -1,
+      cellY: -1,
+      immuneSession: -1,
+      radius: HALF - 1,
+      forceFrightened: false
+    };
+
+    Object.assign(this, { ...defaultProps, ...this.#getPropsByIndex(defaultProps.index), ...props });
+  }
+
+  #getPropsByIndex(i) {
+    return {
+      x: GHOST_HOME[i][0],
+      y: GHOST_HOME[i][1],
+      color: GHOST_COLORS[i],
+      name: GHOST_NAMES[i],
+      mode: i === 0 ? 'chase' : 'house',
+      houseTimer: i * 150,
+    }
   }
 
   isFrightened() {
@@ -444,7 +456,7 @@ class Ghost {
 
     if (Math.abs(dxe) + Math.abs(dye) < 0.3) {
       this.mode = 'chase';
-      this.dir = 1;
+      this.dir = directions.UP;
       this.cellX = -1;
       this.cellY = -1;
     }
@@ -636,7 +648,7 @@ function updateGhosts(){
 
 // ── INPUT ────────────────────────────────────────────────
 document.addEventListener('keydown',e=>{
-  if(e.code==='Space') {
+  if(e.code==='Space'||e.code==='Enter') {
     if(state==='PLAYING') {
       state='PAUSED';
     }
@@ -646,8 +658,9 @@ document.addEventListener('keydown',e=>{
     else if(state==='TITLE' || state==='GAMEOVER') {
       restartGame();
     }
-    e.preventDefault(); 
-    return; 
+    else if(state==='EXIT_CONFIRM'){ 
+      state='TITLE';
+    } 
   }
   else if (e.code==='Escape'||e.code==='Backspace') {
     if (state==='PLAYING'||state==='PAUSED') { 
@@ -659,19 +672,18 @@ document.addEventListener('keydown',e=>{
     else if(state==='GAMEOVER') {
       state='TITLE'; 
     } 
-    e.preventDefault(); 
-    return; 
   }
-  if(state==='EXIT_CONFIRM'){
-    if(e.code==='KeyY'||e.code==='Enter'){ restartGame(); state='TITLE'; }
-    else if(e.code==='KeyN'){ state=exitPrevState; }
-    e.preventDefault(); return;
+  else if(e.code==='KeyN') {
+    if (state==='EXIT_CONFIRM') {
+        state=exitPrevState;
+    }
   }
-  if(state!=='PLAYING') return;
-  if(e.code==='ArrowRight'||e.code==='KeyD') pac.nextDir=0;
-  if(e.code==='ArrowUp'   ||e.code==='KeyW') pac.nextDir=1;
-  if(e.code==='ArrowLeft' ||e.code==='KeyA') pac.nextDir=2;
-  if(e.code==='ArrowDown' ||e.code==='KeyS') pac.nextDir=3;
+  if(state==='PLAYING') {
+    if(e.code==='ArrowRight'||e.code==='KeyD') pac.nextDir=directions.RIGHT;
+    if(e.code==='ArrowUp'   ||e.code==='KeyW') pac.nextDir=directions.UP;
+    if(e.code==='ArrowLeft' ||e.code==='KeyA') pac.nextDir=directions.LEFT;
+    if(e.code==='ArrowDown' ||e.code==='KeyS') pac.nextDir=directions.DOWN;
+  }
   e.preventDefault();
 });
 
