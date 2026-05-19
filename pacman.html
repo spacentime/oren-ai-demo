@@ -31,8 +31,8 @@
         flex-direction:row;
         align-items:center;
         gap:16px;
-        margin-top:6px;
-        margin-bottom: 16px;
+        margin-top:0px;
+        margin-bottom: 50px;
         flex-shrink:0;
       }
 
@@ -40,8 +40,8 @@
       #dpad {
         display:grid;
         grid-template-areas: '. up .' 'left center right' '. down .';
-        grid-template-columns: repeat(3, 64px);
-        grid-template-rows: repeat(3, 64px);
+        grid-template-columns: repeat(3, 100px);
+        grid-template-rows: minmax(64px, auto) minmax(20px, auto) minmax(64px, auto);
         gap:6px;
       }
       #dpad button {
@@ -53,12 +53,14 @@
         cursor:pointer; touch-action:manipulation;
         -webkit-user-select:none; user-select:none;
         display:flex; align-items:center; justify-content:center;
+        margin-left: auto; margin-right: auto;
       }
       #dpad button:active { background:rgba(255,224,0,0.28); }
       .dpad-up    { grid-area:up; }
-      .dpad-left  { grid-area:left; }
-      .dpad-center{ grid-area:center; border:2px solid rgba(255,255,255,0.08); border-radius:50%; background:rgba(255,255,255,0.03); }
-      .dpad-right { grid-area:right; }
+      .dpad-left  { grid-area:left; margin-top:-40px}
+      .dpad-center{ grid-area:center; border:2px solid rgba(255,255,255,0.08); border-radius:50%;
+                    background:rgba(255,255,255,0.03); pointer-events:none; margin-left: 18px;margin-right: 18px; }
+      .dpad-right { grid-area:right; margin-top:-40px}
       .dpad-down  { grid-area:down; }
 
       /* Action buttons — shared base */
@@ -133,6 +135,6 @@
     </button>
   </div>
 </div>
-<script src="pacman.js"></script>
+<script type="module" src="pacman.js"></script>
 </body>
 </html>
