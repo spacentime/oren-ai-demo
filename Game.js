@@ -259,8 +259,19 @@ export default class Game {
   }
 
   // ── INPUT HANDLING ───────────────────────────────────────
+
   handleKeyDown(code) {
-    if (code === 'Space' || code === 'Enter') {
+    const isKey = {
+      moveLeft : function(code) { return ['ArrowLeft', 'KeyA', 'Numpad4'].includes(code); },
+      moveRight : function(code) { return ['ArrowRight', 'KeyD', 'Numpad6'].includes(code); },
+      moveUp : function(code) { return ['ArrowUp', 'KeyW', 'Numpad8'].includes(code); },
+      moveDown : function(code) { return ['ArrowDown', 'KeyS', 'Numpad2'].includes(code); },
+      confirm : function(code) { return ['Enter', 'Space'].includes(code); },
+      cancel : function(code) { return ['Escape', 'Backspace'].includes(code); },
+      yesKey : function(code) { return ['KeyY'].includes(code); },
+      noKey : function(code) { return ['KeyN'].includes(code); },
+    }
+    if (isKey.confirm(code)) {
       if (this.#state === 'PLAYING') {
         this.#state = 'PAUSED';
       } else if (this.#state === 'PAUSED') {
@@ -270,7 +281,7 @@ export default class Game {
       } else if (this.#state === 'EXIT_CONFIRM') {
         this.#state = 'TITLE';
       }
-    } else if (code === 'Escape' || code === 'Backspace') {
+    } else if (isKey.cancel(code)) {
       if (this.#state === 'PLAYING' || this.#state === 'PAUSED') {
         this.#exitPrevState = this.#state;
         this.#state = 'EXIT_CONFIRM';
@@ -279,26 +290,26 @@ export default class Game {
       } else if (this.#state === 'GAMEOVER') {
         this.#state = 'TITLE';
       }
-    } else if (code === 'KeyN') {
+    } else if (isKey.noKey(code)) {
       if (this.#state === 'EXIT_CONFIRM') {
         this.#state = this.#exitPrevState;
       }
-    } else if (code === 'KeyY') {
+    } else if (isKey.yesKey(code)) {
       if (this.#state === 'EXIT_CONFIRM') {
         this.#state = 'TITLE';
       }
     }
-    else if (this.#state === 'PLAYING') {
-      if (code === 'ArrowRight' || code === 'KeyD') {
+    else if (this.#state === 'PLAYING') {      
+      if (isKey.moveRight(code)) {
         this.#pac.nextDir = directions.RIGHT;
       }
-      if (code === 'ArrowUp' || code === 'KeyW') {
+      if (isKey.moveUp(code)) {
         this.#pac.nextDir = directions.UP;
       }
-      if (code === 'ArrowLeft' || code === 'KeyA') {
+      if (isKey.moveLeft(code)) {
         this.#pac.nextDir = directions.LEFT;
       }
-      if (code === 'ArrowDown' || code === 'KeyS') {
+      if (isKey.moveDown(code)) {
         this.#pac.nextDir = directions.DOWN;
       }
     }
