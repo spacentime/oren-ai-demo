@@ -31,7 +31,7 @@
         flex-direction:row;
         align-items:center;
         gap:16px;
-        margin-top:0px;
+        margin-top:16px;
         margin-bottom: 50px;
         flex-shrink:0;
       }
@@ -39,13 +39,12 @@
       /* D-pad */
       #dpad {
         display:grid;
-        grid-template-areas: '. up .' 'left center right' '. down .';
-        grid-template-columns: repeat(3, 100px);
-        grid-template-rows: minmax(64px, auto) minmax(20px, auto) minmax(64px, auto);
+        grid-template-areas: 'upleft up upright' 'left center right';
+        grid-template-columns: repeat(3, minmax(64px, 140px));
+        grid-template-rows: minmax(64px, 64px) minmax(64px, auto);
         gap:6px;
       }
       #dpad button {
-        width:64px; height:64px;
         background:rgba(255,255,255,0.08);
         border:2px solid rgba(255,224,0,0.55);
         border-radius:12px;
@@ -55,13 +54,15 @@
         display:flex; align-items:center; justify-content:center;
         margin-left: auto; margin-right: auto;
       }
+      button.vertical { width: 90%; height: 160%; margin-top:10% }
+      button.horizontal { width: 90%; height: 90%; }
       #dpad button:active { background:rgba(255,224,0,0.28); }
       .dpad-up    { grid-area:up; }
-      .dpad-left  { grid-area:left; margin-top:-40px}
-      .dpad-center{ grid-area:center; border:2px solid rgba(255,255,255,0.08); border-radius:50%;
+      #dpad button.dpad-left  { grid-area:upleft; }
+      .dpad-center{ grid-area:none; border:2px solid rgba(255,255,255,0.08); border-radius:50%;
                     background:rgba(255,255,255,0.03); pointer-events:none; margin-left: 18px;margin-right: 18px; }
-      .dpad-right { grid-area:right; margin-top:-40px}
-      .dpad-down  { grid-area:down; }
+      #dpad button.dpad-right { grid-area:upright; }
+      #dpad button.dpad-down  { grid-area:center; }
 
       /* Action buttons — shared base */
       #action-btns {
@@ -114,16 +115,15 @@
   </head>
 <body>
 <div id="wrapper">
-  <canvas id="c"></canvas>
+  <canvas id="c" data-touchstart="puase"></canvas>
   <div id="crt"></div>
 </div>
 <div id="mobile-controls">
   <div id="dpad">
-    <button type="button" class="dpad-up"    data-dir="1">▲</button>
-    <button type="button" class="dpad-left"  data-dir="2">◀</button>
-    <div    class="dpad-center"></div>
-    <button type="button" class="dpad-right" data-dir="0">▶</button>
-    <button type="button" class="dpad-down"  data-dir="3">▼</button>
+    <button type="button" class="dpad-up horizontal"    data-dir="1">▲</button>
+    <button type="button" class="dpad-left vertical"  data-dir="2">◀</button>
+    <button type="button" class="dpad-right vertical" data-dir="0">▶</button>
+    <button type="button" class="dpad-down horizontal"  data-dir="3">▼</button>
   </div>
   <div id="action-btns">
     <button type="button" id="btn-primary">
