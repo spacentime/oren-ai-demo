@@ -272,6 +272,7 @@ export default class Game {
       noKey : function(code) { return ['KeyN'].includes(code); },
     }
     if (isKey.confirm(code)) {
+      // same as togglePause but also restarts game from title/gameover and exits from exit confirm
       if (this.#state === 'PLAYING') {
         this.#state = 'PAUSED';
       } else if (this.#state === 'PAUSED') {
@@ -333,6 +334,18 @@ export default class Game {
       this.#state = 'PLAYING';
       this.#pac.nextDir = dir;
     }
+  }
+
+  togglePause() {
+    if (this.#state === 'PLAYING') {
+      this.#state = 'PAUSED'; 
+    } else if (this.#state === 'PAUSED') {
+      this.#state = 'PLAYING';  
+    } else if (this.#state === 'TITLE' || this.#state === 'GAMEOVER') {
+      this.restartGame();
+    } else if (this.#state === 'EXIT_CONFIRM') {
+      this.#state = 'TITLE';
+    } 
   }
 
   handleBackButton() {
