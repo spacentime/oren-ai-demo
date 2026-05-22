@@ -43,17 +43,12 @@ export default class Game {
   #maze;
   #totalDots;
 
-  // Audio callback
-  #audioCallbacks;
+  // Audio object
+  #audio;
 
-  constructor(audioCallbacks = {}) {
-    this.#audioCallbacks = {
-      playEat: audioCallbacks.playEat || (() => {}),
-      playDeath: audioCallbacks.playDeath || (() => {}),
-      playPowerUp: audioCallbacks.playPowerUp || (() => {}),
-      beep: audioCallbacks.beep || (() => {}),
-    };
-
+  constructor(audio = {}) {
+    // Keep a direct reference to the audio object
+    this.#audio = audio;
     this.#initializeGameState();
   }
 
@@ -178,14 +173,13 @@ export default class Game {
             life: 1,
             dy: -0.4,
           });
-          this.#audioCallbacks.beep(880, 0.05);
-          this.#audioCallbacks.beep(1100, 0.08);
+          this.#audio?.playGhostEaten?.();
         } else {
           this.#pac.alive = false;
           this.#lives--;
           this.#state = 'DEAD';
           this.#deadTimer = 180;
-          this.#audioCallbacks.playDeath();
+          this.#audio?.playDeath?.();
         }
       }
     });
@@ -198,9 +192,9 @@ export default class Game {
       this.#dotsEaten++;
       this.#score += eatEvent.points;
       if (eatEvent.soundType === 'eat') {
-        this.#audioCallbacks.playEat();
+        this.#audio?.playEat?.();
       } else if (eatEvent.soundType === 'power') {
-        this.#audioCallbacks.playPowerUp();
+        this.#audio?.playPowerUp?.();
         this.#powerSession.start();
       }
       if (this.#dotsEaten >= this.#totalDots) {
@@ -222,9 +216,7 @@ export default class Game {
         life: 1,
         dy: -0.4,
       });
-      this.#audioCallbacks.beep(1047, 0.06);
-      setTimeout(() => this.#audioCallbacks.beep(1319, 0.08), 60);
-      setTimeout(() => this.#audioCallbacks.beep(1568, 0.1), 120);
+      this.#audio?.playCherryEaten?.();
     }
   }
 
@@ -252,9 +244,7 @@ export default class Game {
       this.#totalDots = this.#countTotalDots();
       this.resetPositions();
       this.#state = 'PLAYING';
-      this.#audioCallbacks.beep(523, 0.1);
-      this.#audioCallbacks.beep(659, 0.1);
-      this.#audioCallbacks.beep(784, 0.15);
+      this.#audio?.playLevelUp?.();
     }
   }
 
@@ -270,6 +260,7 @@ export default class Game {
       cancel : function(code) { return ['Escape', 'Backspace'].includes(code); },
       yesKey : function(code) { return ['KeyY'].includes(code); },
       noKey : function(code) { return ['KeyN'].includes(code); },
+      muteKey: function(code) { return ['KeyM'].includes(code)},
     }
     if (isKey.confirm(code)) {
       // same as togglePause but also restarts game from title/gameover and exits from exit confirm
@@ -299,6 +290,8 @@ export default class Game {
       if (this.#state === 'EXIT_CONFIRM') {
         this.#state = 'TITLE';
       }
+    } else if (isKey.muteKey(code)) {
+        this.#audio?.toggleMute?.();
     }
     else if (this.#state === 'PLAYING') {      
       if (isKey.moveRight(code)) {

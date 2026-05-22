@@ -17,6 +17,7 @@ import {
   HALF,
 } from './constants.js';
 import Game from './Game.js';
+import Audio from './Audio.js';
 
 const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
@@ -32,30 +33,14 @@ let totalDots = 0;
 maze.forEach(r => r.forEach(c => { if(c===CELL_DOT||c===CELL_POWER) totalDots++; }));
 
 // ── AUDIO ────────────────────────────────────────────────
-const AC = new (window.AudioContext||window.webkitAudioContext)();
-function beep(f,d,t='square',v=0.25){
-  try{
-    const o=AC.createOscillator(), g=AC.createGain();
-    o.connect(g); g.connect(AC.destination);
-    o.type=t; o.frequency.value=f;
-    g.gain.setValueAtTime(v,AC.currentTime);
-    g.gain.exponentialRampToValueAtTime(0.001,AC.currentTime+d);
-    o.start(); o.stop(AC.currentTime+d);
-  }catch(e){}
-}
-function playEat(){ beep(440+Math.random()*80,0.04,'square',0.15); }
-function playDeath(){
-  [523,415,330,262,208,165,131].forEach((f,i)=>setTimeout(()=>beep(f,0.12,'sawtooth'),i*120));
-}
-function playPowerUp(){ beep(660,0.08); setTimeout(()=>beep(880,0.12),80); }
 
+const AC = new (window.AudioContext||window.webkitAudioContext)();
+let audio = new Audio(AC);
+
+// Pass the entire audio object into Game so it can call methods directly
+// (Game will access `playEat`, `playDeath`, `playPowerUp`, S`toggleMute`, `isMuted`, etc.)
 // ── GAME INSTANCE ────────────────────────────────────────
-const game = new Game({
-  playEat,
-  playDeath,
-  playPowerUp,
-  beep,
-});
+const game = new Game(audio);
 
 // ── UPDATE ───────────────────────────────────────────────
 // (All update logic is now in Game class)
@@ -249,6 +234,43 @@ function drawGhost(g){
   }
 }
 
+function drawSpeaker(on) {
+  const lx = canvas.width - 35;
+  const ly = 0;
+
+  // speaker body
+  ctx.fillStyle = '#ffffff';
+  ctx.beginPath();
+  ctx.moveTo(lx, ly + 6);
+  ctx.lineTo(lx + 6, ly + 6);
+  ctx.lineTo(lx + 16, ly);
+  ctx.lineTo(lx + 16, ly + 22);
+  ctx.lineTo(lx + 6, ly + 16);
+  ctx.lineTo(lx, ly + 16);
+  ctx.closePath();
+  ctx.fill();
+
+  if (on) {
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 2;
+    for (let i = 0; i < 3; i++) {
+      const radius = 6 + i * 4;
+      ctx.beginPath();
+      ctx.arc(lx + 18, ly + 11, radius, -Math.PI / 4, Math.PI / 4);
+      ctx.stroke();
+    }
+  } else {
+    ctx.strokeStyle = '#ff5555';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(lx + 22, ly + 2);
+    ctx.lineTo(lx + 32, ly + 20);
+    ctx.moveTo(lx + 32, ly + 2);
+    ctx.lineTo(lx + 22, ly + 20);
+    ctx.stroke();
+  }
+}
+
 function drawHUD(){
   ctx.fillStyle='#000';
   ctx.fillRect(0,0,canvas.width,TOP);
@@ -262,7 +284,9 @@ function drawHUD(){
   ctx.fillText(String(game.score).padStart(6,'0'),8,30);
 
   ctx.fillStyle='#ffffff';
-  ctx.fillText('LV '+game.level,canvas.width/2-20,22);
+  ctx.fillText('Level '+game.level,canvas.width/2-20,22);
+
+  drawSpeaker(!audio.isMuted);
 
   // lives
   for(let i=0;i<game.lives;i++){
@@ -332,6 +356,7 @@ function drawTitle(){
 
   drawPac(game.titlePac);
   drawGhost(game.frightenedGhost);
+  drawSpeaker(!audio.isMuted);
 }
 
 function drawGameOver(){
@@ -560,7 +585,7 @@ document.querySelectorAll('#dpad [data-dir]').forEach(btn => {
   const dir = +btn.dataset.dir;
   btn.addEventListener('touchstart', e => {
     e.preventDefault();
-    if(AC.state==='suspended') AC.resume();
+    audio.toggleSound(true);
     game.handleDpadDirection(dir);
     prevMobileState = '';
     updateMobileButtons();
@@ -570,7 +595,7 @@ document.querySelectorAll('#dpad [data-dir]').forEach(btn => {
 // Primary action button (PLAY / YES)
 btnPrimary.addEventListener('touchstart', e => {
   e.preventDefault();
-  if(AC.state==='suspended') AC.resume();
+  audio.toggleSound(true);
   game.handleKeyDown('Enter');
   prevMobileState = '';
   updateMobileButtons();
@@ -578,7 +603,7 @@ btnPrimary.addEventListener('touchstart', e => {
 
 btnSecondary.addEventListener('touchstart', e => {
   e.preventDefault();
-  if(AC.state==='suspended') AC.resume();   
+  audio.toggleSound(true);
     game.handleKeyDown('KeyN');
     prevMobileState = '';
     updateMobileButtons();
@@ -587,14 +612,14 @@ btnSecondary.addEventListener('touchstart', e => {
 // Back button (device or browser) → exit confirm; second back → cancel
 history.pushState({pacman:true}, '');
 window.addEventListener('popstate', ()=>{
-  if(AC.state==='suspended') AC.resume();
+  audio.toggleSound(true);
   if(game.handleBackButton()){
     history.pushState({pacman:true}, '');
   }
 });
 
 // Unlock AudioContext on first touch (required on iOS)
-document.addEventListener('touchstart', ()=>{ if(AC.state==='suspended') AC.resume(); }, { once:true });
+document.addEventListener('touchstart', ()=>{ audio.toggleSound(true); }, { once:true });
 // Prevent scroll/bounce during gameplay
 document.addEventListener('touchmove', e=>e.preventDefault(), { passive:false });
 
