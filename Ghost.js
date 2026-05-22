@@ -16,8 +16,14 @@ import {
 import { bfsPath, canMoveGhost } from './utils.js';
 
 export default class Ghost {
-  constructor(index, props = {}) {
-    this.index = index;
+  static create(index, props = {}) {
+    let ghost = new Ghost();
+    ghost.index = index;
+    Object.assign(ghost, this.#propsByIndex(index), props);
+    return ghost;
+  }
+
+  constructor() {
     const defaultProps = {
       dir: directions.UP,
       speed: 0.085,
@@ -31,10 +37,10 @@ export default class Ghost {
       forceFrightened: false,
     };
 
-    Object.assign(this, defaultProps, this.#propsByIndex(index), props);
+    Object.assign(this, defaultProps);
   }
 
-  #propsByIndex(i) {
+  static #propsByIndex(i) {
     return {
       x: GHOST_HOME[i][0],
       y: GHOST_HOME[i][1],
@@ -174,7 +180,7 @@ export default class Ghost {
   }
 
   static makeTitleGhost(i) {
-    const g = new Ghost(i);
+    const g = Ghost.create(i);
     g.radius = TILE / 1.3;
     g.speed = 0;
     g.dir = i;
