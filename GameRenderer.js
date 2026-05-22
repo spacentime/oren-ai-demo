@@ -11,12 +11,17 @@ import {
 } from './constants.js';
 
 export default class GameRenderer {
-  constructor(canvas, ctx, game, audio) {
+  constructor(canvas, game, audio) {
     this.canvas = canvas;
-    this.ctx = ctx;
+    this.ctx = canvas.getContext2d();
     this.game = game;
     this.audio = audio;
     this.particles = [];
+  }
+
+  drawBackground() {
+      this.ctx.fillStyle='#000';
+      this.ctx.fillRect(0,0,this.canvas.width,this.canvas.height);
   }
 
   drawMaze(){
@@ -235,7 +240,7 @@ export default class GameRenderer {
     this.ctx.fillText(String(this.game.score).padStart(6,'0'),8,30);
 
     this.ctx.fillStyle='#ffffff';
-    this.ctx.fillText('Level '+this.game.level,this.canvas.width/2-20,22);
+    this.ctx.fillText('LEVEL '+this.game.level,this.canvas.width/2-20,22);
 
     this.drawSpeaker(!this.audio.isMuted);
 
@@ -384,5 +389,60 @@ export default class GameRenderer {
       this.ctx.fillRect(p.x,p.y,p.s,p.s);
     }
     this.ctx.globalAlpha=1;
+  }
+
+  drawPause (){
+    let ctx =this.ctx;
+    let canvas = this.canvas;
+    ctx.fillStyle='rgba(0,0,0,0.45)';
+    ctx.fillRect(0,0,canvas.width,canvas.height);
+    ctx.fillStyle='#FFE000';
+    ctx.font='bold 28px monospace';
+    ctx.textAlign='center';
+    ctx.fillText('PAUSED',canvas.width/2,canvas.height/2);
+    ctx.font='14px monospace';
+    ctx.fillText('press space to resume',canvas.width/2,canvas.height/2+28);
+  }
+
+  drawDead(deadTimer,pacX, pacY) {
+    let ctx =this.ctx;
+    const t=1-(deadTimer/180);
+    const px=pacX*CS+HALF, py=pacY*CS+HALF+TOP;
+    ctx.fillStyle='#FFE000';
+    ctx.beginPath();
+    ctx.moveTo(px,py);
+    ctx.arc(px,py,HALF-1, t*Math.PI, (2-t)*Math.PI);
+    ctx.closePath(); ctx.fill();
+  }
+
+  drawCherry(cherry) {
+    if (!cherry?.active?.isVisible) return;
+
+    const px = cherry.active.x * CS + HALF;
+    const py = cherry.active.y * CS + HALF + TOP;
+    let ctx = this.ctx;
+
+    ctx.strokeStyle = '#33cc33';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(px - 2, py + 1);
+    ctx.quadraticCurveTo(px - 5, py - 5, px, py - 7);
+    ctx.moveTo(px + 2, py + 1);
+    ctx.quadraticCurveTo(px + 5, py - 5, px, py - 7);
+    ctx.stroke();
+
+    ctx.shadowColor = '#ff0000';
+    ctx.shadowBlur = 6;
+    [-4, 4].forEach(ox => {
+      ctx.fillStyle = '#cc0000';
+      ctx.beginPath();
+      ctx.arc(px + ox, py + 3, 4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#ff5555';
+      ctx.beginPath();
+      ctx.arc(px + ox - 1, py + 1, 1.5, 0, Math.PI * 2);
+      ctx.fill();
+    });
+    ctx.shadowBlur = 0;
   }
 }
