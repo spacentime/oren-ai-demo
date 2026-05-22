@@ -4,7 +4,7 @@ export default class Audio {
   _mute = false;
 
   constructor(audioContext) {
-    AC = audioContext;
+    AC = new (window.AudioContext||window.webkitAudioContext)();
   }
 
   get isMuted () {
@@ -40,7 +40,6 @@ export default class Audio {
       this.playTone(1047, 0.06);
       setTimeout(()=>this.playTone(1319, 0.08), 60);
       setTimeout(()=>this.playTone(1568, 0.1), 120);
-      console.log('Audio: playCherryEaten');
     }catch(e){}
   }
 
@@ -49,7 +48,6 @@ export default class Audio {
     try{
       this.playTone(880, 0.05);
       setTimeout(()=>this.playTone(1100, 0.08), 30);
-      console.log('Audio: playGhostEaten');
     }catch(e){}
   }
 
@@ -59,7 +57,6 @@ export default class Audio {
       this.playTone(523, 0.1);
       setTimeout(()=>this.playTone(659, 0.1), 80);
       setTimeout(()=>this.playTone(784, 0.15), 160);
-      console.log('Audio: playLevelUp');
     }catch(e){}
   }
 

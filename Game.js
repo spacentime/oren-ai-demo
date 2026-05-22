@@ -46,19 +46,20 @@ export default class Game {
   // Audio object
   #audio;
 
-  constructor(audio = {}) {
+  constructor(audio, cherry, powerSession, pac) {
     // Keep a direct reference to the audio object
     this.#audio = audio;
+    this.#cherry = cherry;
+    this.#powerSession = powerSession;
+    this.#pac = pac
     this.#initializeGameState();
   }
 
   #initializeGameState() {
-    this.#powerSession = new PowerSession();
-    this.#cherry = new Cherry(this.#level);
-    this.#pac = new Pac();
-    this.#maze = RAW.map(r => r.split('').map(Number));
+    this.#cherry = this.#cherry.reset(this.#level);
+    this.#maze = this.#createMaze();
     this.#totalDots = this.#countTotalDots();
-    this.#ghosts = [0, 1, 2, 3].map(i => new Ghost(i));
+    this.#ghosts = this.#createGhosts();
     this.#initializeTitleScreen();
   }
 
@@ -120,10 +121,18 @@ export default class Game {
     this.#score += points;
   }
 
+  #createGhosts() {
+    return [0, 1, 2, 3].map(i => Ghost.create(i));
+  }
+
+  #createMaze() {
+    return RAW.map(r => r.split('').map(Number));
+  }
+
   // ── GAME LOGIC ───────────────────────────────────────────
   resetPositions() {
     this.#pac.resetPosition();
-    this.#ghosts = [0, 1, 2, 3].map(i => new Ghost(i));
+    this.#ghosts = this.#createGhosts();
     this.#powerSession.reset();
     this.#pointBubbles = [];
     this.#cherry.reset(this.#level);
@@ -131,7 +140,7 @@ export default class Game {
 
   resetPositionsAfterDeath() {
     this.#pac.resetPosition();
-    this.#ghosts = [0, 1, 2, 3].map(i => new Ghost(i));
+    this.#ghosts = this.#createGhosts();
     this.#powerSession.reset();
     this.#pointBubbles = [];
     this.#cherry.resetSpawn();
@@ -144,7 +153,7 @@ export default class Game {
     this.#level = 1;
     this.#powerSession.reset();
     this.#cherry.reset(this.#level);
-    this.#maze = RAW.map(r => r.split('').map(Number));
+    this.#maze = this.#createMaze();
     this.#totalDots = this.#countTotalDots();
     this.resetPositions();
     this.#state = 'PLAYING';
@@ -205,8 +214,8 @@ export default class Game {
     this.updateGhosts();
   }
 
-  updateCherryCollection() {
-    const cherryEvent = this.#cherry.update(this.#pac);
+  updateCherryCollection(globalDot) {
+    const cherryEvent = this.#cherry.update(this.#pac, globalDot);
     if (cherryEvent?.collected) {
       this.#score += cherryEvent.points;
       this.#pointBubbles.push({
@@ -240,7 +249,7 @@ export default class Game {
       this.#lives++;
       this.#dotsEaten = 0;
       this.#cherry.cherriesLeft = 3;
-      this.#maze = RAW.map(r => r.split('').map(Number));
+      this.#maze = this.#createMaze();
       this.#totalDots = this.#countTotalDots();
       this.resetPositions();
       this.#state = 'PLAYING';
