@@ -10,7 +10,7 @@ export default class App {
     settings = {};
     logger;
     
-
+    
     constructor(logger, settings, game, mobileSupport, renderer, canvas) {
         if (!(logger instanceof Logger)) throw new Error('logger is missing');
         this.logger = logger;

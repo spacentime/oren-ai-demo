@@ -244,7 +244,7 @@ export default class GameRenderer {
 
     this.drawSpeaker(!this.audio.isMuted);
 
-    for(let i=0;i<this.game.lives;i++){
+    for(let i=1;i<this.game.lives;i++){
       const lx=this.canvas.width-20-(this.game.lives-1-i)*18, ly=TOP-8;
       this.ctx.fillStyle='#FFE000';
       this.ctx.beginPath();
